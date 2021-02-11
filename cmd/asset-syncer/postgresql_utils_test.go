@@ -171,7 +171,12 @@ func Test_PGinsertFiles(t *testing.T) {
 		chartID   string = repoName + "/wordpress"
 		filesID   string = chartID + "-2.1.3"
 	)
-	files := models.ChartFiles{ID: filesID, Readme: "foo", Values: "bar", Repo: &models.Repo{Namespace: namespace, Name: repoName}}
+
+	customFilesMap := make(map[string]string)
+    customFilesMap["install.schema.json"] = "{}"
+    customFilesMap["install.uiSchema.json"] = "{}"
+
+	files := models.ChartFiles{ID: filesID, Readme: "foo", Values: "bar", Repo: &models.Repo{Namespace: namespace, Name: repoName}, CustomFiles: customFilesMap}
 	mock.ExpectQuery(`INSERT INTO files \(chart_id, repo_name, repo_namespace, chart_files_ID, info\)*`).
 		WithArgs(chartID, repoName, namespace, filesID, files).
 		WillReturnRows(sqlmock.NewRows([]string{"ID"}).AddRow("3"))

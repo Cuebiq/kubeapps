@@ -583,6 +583,12 @@ func (r *fakeRepo) FetchFiles(name string, cv models.ChartVersion) (map[string]s
 	}, nil
 }
 
+func (r *fakeRepo) FetchAllFilesFromDirectory(name string, cv models.ChartVersion, directoryName string) (map[string]string, error){
+    // TBD
+    return r.chartFiles.CustomFiles, nil
+}
+
+
 func Test_fetchAndImportFiles(t *testing.T) {
 	index, _ := parseRepoIndex([]byte(validRepoIndexYAML))
 	repo := &models.RepoInternal{Name: "test", Namespace: "repo-namespace", URL: "http://testrepo.com"}

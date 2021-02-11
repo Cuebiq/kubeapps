@@ -96,6 +96,7 @@ type ChartFiles struct {
 	Schema string
 	Repo   *Repo
 	Digest string
+	CustomFiles map[string]string `json:"custom_files" bson:"-"`
 }
 
 // Allow to convert ChartFiles to a sql JSON
