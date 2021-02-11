@@ -390,6 +390,26 @@ func Test_extractFilesFromTarball(t *testing.T) {
 	})
 }
 
+
+func Test_extractDirectoryFilesFromTarball(t *testing.T) {
+
+	t.Run("extract files from dir", func(t *testing.T) {
+		var b bytes.Buffer
+		tFiles := []tarballFile{{"CustomFiles/file.txt", "best file ever"}, {"file2.txt", "worst file ever"}}
+		createTestTarball(&b, tFiles)
+		r := bytes.NewReader(b.Bytes())
+		tarf := tar.NewReader(r)
+		files, err := extractDirectoryFilesFromTarball("CustomFiles", tarf)
+		assert.NoErr(t, err)
+		assert.Equal(t, len(files), 1, "matches")
+		assert.Equal(t, files["CustomFiles/file.txt"], "best file ever", "matches file content")
+
+	})
+
+}
+
+
+
 type tarballFile struct {
 	Name, Body string
 }
