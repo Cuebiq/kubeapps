@@ -27,11 +27,11 @@ import (
 )
 
 var syncCmd = &cobra.Command{
-	Use:   "sync [REPO NAME] [REPO URL] [REPO TYPE]",
+	Use:   "sync [REPO NAME] [REPO URL] [REPO TYPE] [CUSTOM FILES DIRECTORY]",
 	Short: "add a new chart repository, and resync its charts periodically",
 	Run: func(cmd *cobra.Command, args []string) {
-		if len(args) != 3 {
-			logrus.Info("Need exactly two arguments: [REPO NAME] [REPO URL] [REPO TYPE]")
+		if len(args) < 3 {
+			logrus.Info("Need at least three arguments: [REPO NAME] [REPO URL] [REPO TYPE]")
 			cmd.Help()
 			return
 		}
@@ -83,9 +83,15 @@ var syncCmd = &cobra.Command{
 			logrus.Fatalf("Can't add chart repository to database: %v", err)
 		}
 
+        customFilesDirectoryName := ""
+        if len(args) == 4 {
+            customFilesDirectoryName = args[4]
+        }
+
+
 		// Fetch and store chart icons
 		fImporter := fileImporter{manager}
-		fImporter.fetchFiles(charts, repoIface)
+		fImporter.fetchFiles(charts, repoIface, customFilesDirectoryName)
 
 		// Update cache in the database
 		if err = manager.UpdateLastCheck(repo.Namespace, repo.Name, checksum, time.Now()); err != nil {

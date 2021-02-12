@@ -609,7 +609,7 @@ type fileImporter struct {
 	manager assetManager
 }
 
-func (f *fileImporter) fetchFiles(charts []models.Chart, repo Repo) {
+func (f *fileImporter) fetchFiles(charts []models.Chart, repo Repo, customFilesDirectoryName string) {
 	// Process 10 charts at a time
 	numWorkers := 10
 	iconJobs := make(chan models.Chart, numWorkers)
@@ -619,7 +619,7 @@ func (f *fileImporter) fetchFiles(charts []models.Chart, repo Repo) {
 	log.Debugf("starting %d workers", numWorkers)
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
-		go f.importWorker(&wg, iconJobs, chartFilesJobs, repo)
+		go f.importWorker(&wg, iconJobs, chartFilesJobs, repo, customFilesDirectoryName)
 	}
 
 	// Enqueue jobs to process chart icons
@@ -653,7 +653,7 @@ func (f *fileImporter) fetchFiles(charts []models.Chart, repo Repo) {
 	wg.Wait()
 }
 
-func (f *fileImporter) importWorker(wg *sync.WaitGroup, icons <-chan models.Chart, chartFiles <-chan importChartFilesJob, repo Repo) {
+func (f *fileImporter) importWorker(wg *sync.WaitGroup, icons <-chan models.Chart, chartFiles <-chan importChartFilesJob, repo Repo, customFilesDirectoryName string) {
 	defer wg.Done()
 	for c := range icons {
 		log.WithFields(log.Fields{"name": c.Name}).Debug("importing icon")
@@ -663,7 +663,15 @@ func (f *fileImporter) importWorker(wg *sync.WaitGroup, icons <-chan models.Char
 	}
 	for j := range chartFiles {
 		log.WithFields(log.Fields{"name": j.Name, "version": j.ChartVersion.Version}).Debug("importing readme and values")
-		if err := f.fetchAndImportFilesWithCustomDirectory(j.Name, "CustomFiles", repo, j.ChartVersion); err != nil {
+
+		var err error
+		if customFilesDirectoryName != "" {
+		    err = f.fetchAndImportFilesWithCustomDirectory(j.Name, customFilesDirectoryName , repo, j.ChartVersion)
+		}else {
+	        err = f.fetchAndImportFiles(j.Name, repo, j.ChartVersion)
+		}
+
+		if err != nil {
 			log.WithFields(log.Fields{"name": j.Name, "version": j.ChartVersion.Version}).WithError(err).Error("failed to import files")
 		}
 	}
