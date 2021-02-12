@@ -402,7 +402,7 @@ func Test_extractDirectoryFilesFromTarball(t *testing.T) {
 		files, err := extractDirectoryFilesFromTarball("CustomFiles", tarf)
 		assert.NoErr(t, err)
 		assert.Equal(t, len(files), 1, "matches")
-		assert.Equal(t, files["CustomFiles/file.txt"], "best file ever", "matches file content")
+		assert.Equal(t, files["file.txt"], "best file ever", "matches file content")
 
 	})
 

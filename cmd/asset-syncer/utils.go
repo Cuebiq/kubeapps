@@ -198,6 +198,7 @@ func (r *HelmRepo) FetchAllFilesFromDirectory(name string, cv models.ChartVersio
 	// get last part of the name
 	// ie., "foo/bar" should return "bar"
 	fixedName := path.Base(decodedName)
+
 	directoryPath := fixedName +"/"+ directoryName
 
 	filesInDirectory, err := extractDirectoryFilesFromTarball(directoryPath, tarf)
@@ -516,11 +517,19 @@ func extractDirectoryFilesFromTarball(directoryPath string, tarf *tar.Reader) (m
             return ret, err
         }
 
-        if strings.HasPrefix(header.Name, directoryPath) {
+        var fixedDirectoryPath string
+
+        if strings.HasSuffix(directoryPath,"/") == true {
+            fixedDirectoryPath = directoryPath
+	    } else {
+		    fixedDirectoryPath = directoryPath + "/"
+	    }
+
+
+        if strings.HasPrefix(header.Name, fixedDirectoryPath) {
             var b bytes.Buffer
             io.Copy(&b, tarf)
-            //TODO headear.name take only the files part
-            ret[header.Name] = string(b.Bytes())
+            ret[strings.ReplaceAll(header.Name,fixedDirectoryPath,"")] = string(b.Bytes())
 
         }
 
