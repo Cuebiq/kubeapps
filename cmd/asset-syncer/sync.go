@@ -85,7 +85,7 @@ var syncCmd = &cobra.Command{
 
         customFilesDirectoryName := ""
         if len(args) == 4 {
-            customFilesDirectoryName = args[4]
+            customFilesDirectoryName = args[3]
         }
 
 
