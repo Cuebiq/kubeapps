@@ -642,63 +642,133 @@ func Test_GetChartValues(t *testing.T) {
 }
 
 // tests the GET /{apiVersion}/clusters/default/namespaces/assets/{repo}/{chartName}/versions/{version}/values/schema.json endpoint
-func Test_GetChartSchema(t *testing.T) {
-	ts := httptest.NewServer(setupRoutes())
-	defer ts.Close()
+ func Test_GetChartSchema(t *testing.T) {
+ 	ts := httptest.NewServer(setupRoutes())
+ 	defer ts.Close()
 
-	tests := []struct {
-		name     string
-		version  string
-		err      error
-		files    models.ChartFiles
-		wantCode int
-	}{
-		{
-			"chart does not exist",
-			"0.1.0",
-			errors.New("return an error when checking if chart exists"),
-			models.ChartFiles{ID: "my-repo/my-chart"},
-			http.StatusNotFound,
-		},
-		{
-			"chart exists",
-			"3.2.1",
-			nil,
-			models.ChartFiles{ID: "my-repo/my-chart", Schema: testChartSchema},
-			http.StatusOK,
-		},
-		{
-			"chart does not have values.schema.json",
-			"2.2.2",
-			nil,
-			models.ChartFiles{ID: "my-repo/my-chart"},
-			http.StatusOK,
-		},
-	}
+ 	tests := []struct {
+ 		name     string
+ 		version  string
+ 		err      error
+ 		files    models.ChartFiles
+ 		wantCode int
+ 	}{
+ 		{
+ 			"chart does not exist",
+ 			"0.1.0",
+ 			errors.New("return an error when checking if chart exists"),
+ 			models.ChartFiles{ID: "my-repo/my-chart"},
+ 			http.StatusNotFound,
+ 		},
+ 		{
+ 			"chart exists",
+ 			"3.2.1",
+ 			nil,
+ 			models.ChartFiles{ID: "my-repo/my-chart", Schema: testChartSchema},
+ 			http.StatusOK,
+ 		},
+ 		{
+ 			"chart does not have values.schema.json",
+ 			"2.2.2",
+ 			nil,
+ 			models.ChartFiles{ID: "my-repo/my-chart"},
+ 			http.StatusOK,
+ 		},
+ 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mock, cleanup := setMockManager(t)
-			defer cleanup()
+ 	for _, tt := range tests {
+ 		t.Run(tt.name, func(t *testing.T) {
+ 			mock, cleanup := setMockManager(t)
+ 			defer cleanup()
 
-			mockQuery := mock.ExpectQuery("SELECT info FROM files").
-				WithArgs("my-namespace", tt.files.ID+"-"+tt.version)
+ 			mockQuery := mock.ExpectQuery("SELECT info FROM files").
+ 				WithArgs("my-namespace", tt.files.ID+"-"+tt.version)
 
-			if tt.err != nil {
-				mockQuery.WillReturnError(tt.err)
-			} else {
-				filesJSON, err := json.Marshal(tt.files)
-				if err != nil {
-					t.Fatalf("%+v", err)
-				}
-				mockQuery.WillReturnRows(sqlmock.NewRows([]string{"info"}).AddRow(filesJSON))
-			}
+ 			if tt.err != nil {
+ 				mockQuery.WillReturnError(tt.err)
+ 			} else {
+ 				filesJSON, err := json.Marshal(tt.files)
+ 				if err != nil {
+ 					t.Fatalf("%+v", err)
+ 				}
+ 				mockQuery.WillReturnRows(sqlmock.NewRows([]string{"info"}).AddRow(filesJSON))
+ 			}
 
-			res, err := http.Get(ts.URL + pathPrefix + "/clusters/default/namespaces/my-namespace/assets/" + tt.files.ID + "/versions/" + tt.version + "/values.schema.json")
-			assert.NoError(t, err)
-			defer res.Body.Close()
+ 			res, err := http.Get(ts.URL + pathPrefix + "/clusters/default/namespaces/my-namespace/assets/" + tt.files.ID + "/versions/" + tt.version + "/values.schema.json")
+ 			assert.NoError(t, err)
+ 			defer res.Body.Close()
 
-			assert.Equal(t, res.StatusCode, tt.wantCode, "http status code should match")
-		})
-	}
-}
+ 			assert.Equal(t, res.StatusCode, tt.wantCode, "http status code should match")
+ 		})
+ 	}
+ }
+
+
+// tests the GET /{apiVersion}/clusters/{cluster}/namespaces/{namespace}/assets/{repo}/{chartName}/versions/{version}/custominfo/{filename}" endpoint
+ func Test_GetCustomFiles(t *testing.T) {
+ 	ts := httptest.NewServer(setupRoutes())
+ 	defer ts.Close()
+
+ 	tests := []struct {
+ 		name     string
+ 		version  string
+ 		err      error
+ 		files    models.ChartFiles
+ 		fileRequest string
+ 		wantCode int
+ 	}{
+ 		{
+ 			"chart does not exist",
+ 			"0.1.0",
+ 			errors.New("return an error when checking if chart exists"),
+ 			models.ChartFiles{ID: "my-repo/my-chart", CustomFiles: map[string]string{"testFile2.json": "test"} },
+ 			"testFile.json",
+ 			http.StatusNotFound,
+ 		},
+ 		{
+ 			"chart exists",
+ 			"3.2.1",
+ 			nil,
+ 			models.ChartFiles{ID: "my-repo/my-chart", Schema: testChartSchema, CustomFiles: map[string]string{"testFile.json": "test"} },
+ 			"testFile.json",
+ 			http.StatusOK,
+ 		},
+ 		{
+ 			"chart does not have testNotExistingFile.json",
+ 			"2.2.2",
+ 			nil,
+ 			models.ChartFiles{ID: "my-repo/my-chart", CustomFiles: map[string]string{}},
+ 			"testNotExistingFile.json",
+ 			http.StatusNotFound,
+ 		},
+ 	}
+
+ 	for _, tt := range tests {
+ 		t.Run(tt.name, func(t *testing.T) {
+ 			mock, cleanup := setMockManager(t)
+ 			defer cleanup()
+
+ 			mockQuery := mock.ExpectQuery("SELECT info FROM files").
+ 				WithArgs("my-namespace", tt.files.ID+"-"+tt.version)
+
+ 			if tt.err != nil {
+ 				mockQuery.WillReturnError(tt.err)
+ 			} else {
+ 				filesJSON, err := json.Marshal(tt.files)
+ 				if err != nil {
+ 					t.Fatalf("%+v", err)
+ 				}
+ 				mockQuery.WillReturnRows(sqlmock.NewRows([]string{"info"}).AddRow(filesJSON))
+ 			}
+
+
+	//apiv1.Methods("GET").Path("/clusters/{cluster}/namespaces/{namespace}/assets/{repo}/{chartName}/versions/{version}/custominfo/{filename}").Handler(WithParams(getChartVersionCustomInfo))
+
+ 			res, err := http.Get(ts.URL + pathPrefix + "/clusters/default/namespaces/my-namespace/assets/" + tt.files.ID + "/versions/" + tt.version + "/custominfo" + "/"+ tt.fileRequest)
+ 			assert.NoError(t, err)
+ 			defer res.Body.Close()
+
+ 			assert.Equal(t, res.StatusCode, tt.wantCode, "http status code should match")
+ 		})
+ 	}
+ }
