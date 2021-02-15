@@ -109,8 +109,9 @@ type Repo interface {
 	Checksum() (string, error)
 	Repo() *models.RepoInternal
 	Charts() ([]models.Chart, error)
-	FetchFiles(name string, cv models.ChartVersion) (map[string]string, error)
-	FetchAllFilesFromDirectory(name string, cv models.ChartVersion, directoryName string) (map[string]string, error)
+	FetchTarChart(name string, cv models.ChartVersion) (*tar.Reader, error)
+	FetchFiles(name string, cv models.ChartVersion, tarf *tar.Reader) (map[string]string, error)
+	FetchAllFilesFromDirectory(name string, cv models.ChartVersion, directoryName string, tarf *tar.Reader) (map[string]string, error)
 
 }
 
@@ -158,8 +159,7 @@ const (
 )
 
 
-// FetchFiles retrieves the important files of a chart and version from the repo
-func (r *HelmRepo) FetchAllFilesFromDirectory(name string, cv models.ChartVersion, directoryName string) (map[string]string, error) {
+func (r *HelmRepo) FetchTarChart(name string, cv models.ChartVersion) (*tar.Reader, error){
 	chartTarballURL := chartTarballURL(r.RepoInternal, cv)
 	req, err := http.NewRequest("GET", chartTarballURL, nil)
 	if err != nil {
@@ -186,6 +186,12 @@ func (r *HelmRepo) FetchAllFilesFromDirectory(name string, cv models.ChartVersio
 	defer gzf.Close()
 
 	tarf := tar.NewReader(gzf)
+
+	return tarf, nil
+}
+
+// FetchFiles retrieves the important files of a chart and version from the repo
+func (r *HelmRepo) FetchAllFilesFromDirectory(name string, cv models.ChartVersion, directoryName string, tarChart *tar.Reader) (map[string]string, error) {
 
 	// decode escaped characters
 	// ie., "foo%2Fbar" should return "foo/bar"
@@ -201,7 +207,7 @@ func (r *HelmRepo) FetchAllFilesFromDirectory(name string, cv models.ChartVersio
 
 	directoryPath := fixedName +"/"+ directoryName
 
-	filesInDirectory, err := extractDirectoryFilesFromTarball(directoryPath, tarf)
+	filesInDirectory, err := extractDirectoryFilesFromTarball(directoryPath, tarChart)
 	if err != nil {
 		return nil, err
 	}
@@ -211,33 +217,7 @@ func (r *HelmRepo) FetchAllFilesFromDirectory(name string, cv models.ChartVersio
 
 
 // FetchFiles retrieves the important files of a chart and version from the repo
-func (r *HelmRepo) FetchFiles(name string, cv models.ChartVersion) (map[string]string, error) {
-	chartTarballURL := chartTarballURL(r.RepoInternal, cv)
-	req, err := http.NewRequest("GET", chartTarballURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", userAgent())
-	if len(r.AuthorizationHeader) > 0 {
-		req.Header.Set("Authorization", r.AuthorizationHeader)
-	}
-
-	res, err := netClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer res.Body.Close()
-
-	// We read the whole chart into memory, this should be okay since the chart
-	// tarball needs to be small enough to fit into a GRPC call (Tiller
-	// requirement)
-	gzf, err := gzip.NewReader(res.Body)
-	if err != nil {
-		return nil, err
-	}
-	defer gzf.Close()
-
-	tarf := tar.NewReader(gzf)
+func (r *HelmRepo) FetchFiles(name string, cv models.ChartVersion, tarf *tar.Reader) (map[string]string, error) {
 
 	// decode escaped characters
 	// ie., "foo%2Fbar" should return "foo/bar"
@@ -417,8 +397,14 @@ func (r *OCIRegistry) Charts() ([]models.Chart, error) {
 	return []models.Chart{}, nil
 }
 
+
+func (r *OCIRegistry)  FetchTarChart(name string, cv models.ChartVersion) (*tar.Reader, error) {
+    // TBD
+    return nil, nil
+}
+
 // FetchFiles retrieves the important files of a chart and version from the repo
-func (r *OCIRegistry) FetchFiles(name string, cv models.ChartVersion) (map[string]string, error) {
+func (r *OCIRegistry) FetchFiles(name string, cv models.ChartVersion, tarf *tar.Reader) (map[string]string, error) {
 	// TBD
 	return map[string]string{
 		values: "",
@@ -427,7 +413,7 @@ func (r *OCIRegistry) FetchFiles(name string, cv models.ChartVersion) (map[strin
 	}, nil
 }
 
-func (r *OCIRegistry) FetchAllFilesFromDirectory(name string, cv models.ChartVersion, directoryName string) (map[string]string, error){
+func (r *OCIRegistry) FetchAllFilesFromDirectory(name string, cv models.ChartVersion, directoryName string, tarf *tar.Reader) (map[string]string, error){
     // TBD
     return map[string]string{}, nil
 }
@@ -750,7 +736,13 @@ func (f *fileImporter) fetchAndImportFiles(name string, repo Repo, cv models.Cha
 	}
 	log.WithFields(log.Fields{"name": name, "version": cv.Version}).Debug("fetching files")
 
-	files, err := repo.FetchFiles(name, cv)
+    tarChart, err := repo.FetchTarChart(name, cv)
+
+	if err != nil {
+    	return err
+    }
+
+	files, err := repo.FetchFiles(name, cv, tarChart)
 	if err != nil {
 		return err
 	}
@@ -790,12 +782,19 @@ func (f *fileImporter) fetchAndImportFilesWithCustomDirectory(name string, custo
 	}
 	log.WithFields(log.Fields{"name": name, "version": cv.Version}).Debug("fetching files")
 
-	files, err := repo.FetchFiles(name, cv)
+
+	tarChart, err := repo.FetchTarChart(name, cv)
+
+	if err != nil {
+    	return err
+    }
+
+	files, err := repo.FetchFiles(name, cv, tarChart)
 	if err != nil {
 		return err
 	}
 
-	customFiles, err := repo.FetchAllFilesFromDirectory(name, cv, customDirectoryName )
+	customFiles, err := repo.FetchAllFilesFromDirectory(name, cv, customDirectoryName, tarChart )
     if err != nil {
     	return err
     }

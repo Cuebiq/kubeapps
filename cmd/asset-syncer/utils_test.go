@@ -595,7 +595,12 @@ func (r *fakeRepo) Charts() ([]models.Chart, error) {
 	return r.charts, nil
 }
 
-func (r *fakeRepo) FetchFiles(name string, cv models.ChartVersion) (map[string]string, error) {
+func (r *fakeRepo)  FetchTarChart(name string, cv models.ChartVersion) (*tar.Reader, error) {
+    // TBD
+    return nil, nil
+}
+
+func (r *fakeRepo) FetchFiles(name string, cv models.ChartVersion, tarf *tar.Reader) (map[string]string, error) {
 	return map[string]string{
 		values: r.chartFiles.Values,
 		readme: r.chartFiles.Readme,
@@ -603,7 +608,7 @@ func (r *fakeRepo) FetchFiles(name string, cv models.ChartVersion) (map[string]s
 	}, nil
 }
 
-func (r *fakeRepo) FetchAllFilesFromDirectory(name string, cv models.ChartVersion, directoryName string) (map[string]string, error){
+func (r *fakeRepo) FetchAllFilesFromDirectory(name string, cv models.ChartVersion, directoryName string, tarf *tar.Reader) (map[string]string, error){
     // TBD
     return r.chartFiles.CustomFiles, nil
 }
