@@ -81,7 +81,7 @@ func parseFlags(progname string, args []string) (config *Config, output string, 
 	flagSet.StringVar(&conf.DBSecretKey, "database-secret-key", "postgresql-root-password", "Kubernetes secret key used for database credentials")
 	flagSet.StringVar(&conf.UserAgentComment, "user-agent-comment", "", "UserAgent comment used during outbound requests")
 	flagSet.StringVar(&conf.Crontab, "crontab", "*/10 * * * *", "CronTab to specify schedule")
-	flagSet.StringVar(&conf.CustomFilesDirectory, "custom-files-directory", "", "Directory where custom files are stored")
+	flagSet.StringVar(&conf.CustomFilesDirectory, "custom-files-directory", "", "Directory where custom files are stored. Default no directory are take in consideration")
 
 	err = flagSet.Parse(args)
 	if err != nil {
