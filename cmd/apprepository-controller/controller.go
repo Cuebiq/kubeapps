@@ -582,7 +582,7 @@ func apprepoSyncJobArgs(apprepo *apprepov1alpha1.AppRepository, config Config) [
 		args = append(args, "--user-agent-comment="+config.UserAgentComment)
 	}
 
-	args = append(args, "--namespace="+apprepo.GetNamespace(), apprepo.GetName(), apprepo.Spec.URL, apprepo.Spec.Type)
+	args = append(args, "--namespace="+apprepo.GetNamespace(), apprepo.GetName(), apprepo.Spec.URL, apprepo.Spec.Type, config.CustomFilesDirectory)
 
 	if len(apprepo.Spec.OCIRepositories) > 0 {
 		args = append(args, "--oci-repositories", strings.Join(apprepo.Spec.OCIRepositories, ","))
