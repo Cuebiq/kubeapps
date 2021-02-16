@@ -90,6 +90,7 @@ func Test_newCronJob(t *testing.T) {
 												"my-charts",
 												"https://charts.acme.com/my-charts",
 												"helm",
+												"",
 											},
 											Env: []corev1.EnvVar{
 												{
@@ -182,6 +183,7 @@ func Test_newCronJob(t *testing.T) {
 												"my-charts",
 												"https://charts.acme.com/my-charts",
 												"helm",
+												"",
 											},
 											Env: []corev1.EnvVar{
 												{
@@ -270,6 +272,7 @@ func Test_newCronJob(t *testing.T) {
 												"my-charts-in-otherns",
 												"https://charts.acme.com/my-charts",
 												"helm",
+												"",
 											},
 											Env: []corev1.EnvVar{
 												{
@@ -377,6 +380,7 @@ func Test_newSyncJob(t *testing.T) {
 										"my-charts",
 										"https://charts.acme.com/my-charts",
 										"helm",
+										"",
 									},
 									Env: []corev1.EnvVar{
 										{
@@ -444,6 +448,7 @@ func Test_newSyncJob(t *testing.T) {
 										"my-charts",
 										"https://charts.acme.com/my-charts",
 										"helm",
+										"",
 									},
 									Env: []corev1.EnvVar{
 										{
@@ -526,6 +531,7 @@ func Test_newSyncJob(t *testing.T) {
 										"my-charts",
 										"https://charts.acme.com/my-charts",
 										"helm",
+										"",
 									},
 									Env: []corev1.EnvVar{
 										{
@@ -613,6 +619,7 @@ func Test_newSyncJob(t *testing.T) {
 										"my-charts",
 										"https://charts.acme.com/my-charts",
 										"helm",
+										"",
 									},
 									Env: []corev1.EnvVar{
 										{
@@ -712,6 +719,7 @@ func Test_newSyncJob(t *testing.T) {
 										"my-charts",
 										"https://charts.acme.com/my-charts",
 										"helm",
+										"",
 									},
 									Env: []corev1.EnvVar{
 										{
@@ -829,6 +837,7 @@ func Test_newSyncJob(t *testing.T) {
 										"my-charts",
 										"https://charts.acme.com/my-charts",
 										"helm",
+										"",
 									},
 									Env: []corev1.EnvVar{
 										{Name: "FOO", Value: "BAR"},
@@ -908,6 +917,7 @@ func Test_newSyncJob(t *testing.T) {
 										"my-charts",
 										"https://charts.acme.com/my-charts",
 										"oci",
+										"",
 										"--oci-repositories",
 										"apache,jenkins",
 									},

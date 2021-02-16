@@ -51,6 +51,7 @@ type Config struct {
 	DBSecretKey              string
 	UserAgentComment         string
 	Crontab                  string
+	CustomFilesDirectory     string
 	ReposPerNamespace        bool
 
 	// Args are the positional (non-flag) command-line arguments.
@@ -80,6 +81,7 @@ func parseFlags(progname string, args []string) (config *Config, output string, 
 	flagSet.StringVar(&conf.DBSecretKey, "database-secret-key", "postgresql-root-password", "Kubernetes secret key used for database credentials")
 	flagSet.StringVar(&conf.UserAgentComment, "user-agent-comment", "", "UserAgent comment used during outbound requests")
 	flagSet.StringVar(&conf.Crontab, "crontab", "*/10 * * * *", "CronTab to specify schedule")
+	flagSet.StringVar(&conf.CustomFilesDirectory, "custom-files-directory", "", "Directory where custom files are stored")
 
 	err = flagSet.Parse(args)
 	if err != nil {
@@ -113,6 +115,7 @@ func main() {
 		"database-secret-key":         conf.DBSecretKey,
 		"user-agent-comment":          conf.UserAgentComment,
 		"crontab":                     conf.Crontab,
+		"custom-files-directory":      conf.CustomFilesDirectory,
 	}).Info("apprepository-controller configured with these args:")
 
 	// set up signals so we handle the first shutdown signal gracefully
