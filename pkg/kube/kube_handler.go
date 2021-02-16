@@ -99,6 +99,10 @@ func NewClusterConfig(inClusterConfig *rest.Config, userToken string, cluster st
 	config.BearerToken = userToken
 	config.BearerTokenFile = ""
 
+	if cluster == "" {
+		cluster = "default"
+	}
+
 	clusterConfig, ok := clustersConfig.Clusters[cluster]
 	if !ok {
 		return nil, fmt.Errorf("cluster %q has no configuration", cluster)

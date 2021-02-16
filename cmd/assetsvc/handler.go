@@ -109,6 +109,21 @@ func extractDecodedNamespaceAndRepoAndVersionParams(params Params) (string, stri
 	return namespace, repo, version, "", nil
 }
 
+func extractDecodedNamespaceAndRepoAndVersionAndCustomFilesParams(params Params) (string, string, string, string, string, error) {
+	filename, err := url.PathUnescape(params["filename"])
+	if err != nil {
+		return "", "", "", "", params["filename"], err
+	}
+
+	namespace, repo, version, paramErr, err := extractDecodedNamespaceAndRepoAndVersionParams(params)
+
+	if err != nil {
+	    return "", "", "", "", paramErr, err
+	}
+
+	return namespace, repo, version, filename, "", nil
+}
+
 func extractChartQueryFromRequest(namespace, repo string, req *http.Request) ChartQuery {
 	repos := []string{}
 	if repo != "" {
@@ -250,6 +265,7 @@ func getChartIcon(w http.ResponseWriter, req *http.Request, params Params) {
 // getChartVersionReadme returns the README for a given chart
 func getChartVersionReadme(w http.ResponseWriter, req *http.Request, params Params) {
 	namespace, repo, version, paramErr, err := extractDecodedNamespaceAndRepoAndVersionParams(params)
+
 	if err != nil {
 		handleDecodeError(paramErr, w, err)
 		return
@@ -288,6 +304,43 @@ func getChartVersionValues(w http.ResponseWriter, req *http.Request, params Para
 	}
 
 	w.Write([]byte(files.Values))
+}
+
+
+// getChartVersionCustomInfo returns the requested custom files for a given chart
+func getChartVersionCustomInfo(w http.ResponseWriter, req *http.Request, params Params) {
+
+    log.Info("damiano")
+
+	namespace, repo, version, customFile, paramErr, err := extractDecodedNamespaceAndRepoAndVersionAndCustomFilesParams(params)
+
+	log.Info("damiano")
+	log.Info("damiano "+customFile)
+
+	if err != nil {
+		handleDecodeError(paramErr, w, err)
+		return
+	}
+	fileID := fmt.Sprintf("%s-%s", getChartID(repo, params["chartName"]), version) // chartName remains encoded
+
+	files, err := manager.getChartFiles(namespace, fileID)
+	if err != nil {
+		log.WithError(err).Errorf("could not find  %s with id %s",customFile, fileID)
+		http.NotFound(w, req)
+		return
+	}
+
+
+    if requestedFiles, ok := files.CustomFiles[customFile]; ok {
+       w.Write([]byte(requestedFiles))
+    } else {
+        log.WithError(err).Errorf("could not find %s with id %s", customFile, fileID)
+    	http.NotFound(w, req)
+    	return
+    }
+
+
+
 }
 
 // getChartVersionSchema returns the values.schema.json for a given chart

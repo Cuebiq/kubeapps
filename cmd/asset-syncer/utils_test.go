@@ -390,6 +390,26 @@ func Test_extractFilesFromTarball(t *testing.T) {
 	})
 }
 
+
+func Test_extractDirectoryFilesFromTarball(t *testing.T) {
+
+	t.Run("extract files from dir", func(t *testing.T) {
+		var b bytes.Buffer
+		tFiles := []tarballFile{{"CustomFiles/file.txt", "best file ever"}, {"file2.txt", "worst file ever"}}
+		createTestTarball(&b, tFiles)
+		r := bytes.NewReader(b.Bytes())
+		tarf := tar.NewReader(r)
+		files, err := extractDirectoryFilesFromTarball("CustomFiles", tarf)
+		assert.NoErr(t, err)
+		assert.Equal(t, len(files), 1, "matches")
+		assert.Equal(t, files["file.txt"], "best file ever", "matches file content")
+
+	})
+
+}
+
+
+
 type tarballFile struct {
 	Name, Body string
 }
@@ -575,13 +595,24 @@ func (r *fakeRepo) Charts() ([]models.Chart, error) {
 	return r.charts, nil
 }
 
-func (r *fakeRepo) FetchFiles(name string, cv models.ChartVersion) (map[string]string, error) {
+func (r *fakeRepo)  FetchTarChart(name string, cv models.ChartVersion) (*tar.Reader, error) {
+    // TBD
+    return nil, nil
+}
+
+func (r *fakeRepo) FetchFiles(name string, cv models.ChartVersion, tarf *tar.Reader) (map[string]string, error) {
 	return map[string]string{
 		values: r.chartFiles.Values,
 		readme: r.chartFiles.Readme,
 		schema: r.chartFiles.Schema,
 	}, nil
 }
+
+func (r *fakeRepo) FetchAllFilesFromDirectory(name string, cv models.ChartVersion, directoryName string, tarf *tar.Reader) (map[string]string, error){
+    // TBD
+    return r.chartFiles.CustomFiles, nil
+}
+
 
 func Test_fetchAndImportFiles(t *testing.T) {
 	index, _ := parseRepoIndex([]byte(validRepoIndexYAML))

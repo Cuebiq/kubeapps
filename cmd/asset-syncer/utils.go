@@ -109,7 +109,10 @@ type Repo interface {
 	Checksum() (string, error)
 	Repo() *models.RepoInternal
 	Charts() ([]models.Chart, error)
-	FetchFiles(name string, cv models.ChartVersion) (map[string]string, error)
+	FetchTarChart(name string, cv models.ChartVersion) (*tar.Reader, error)
+	FetchFiles(name string, cv models.ChartVersion, tarf *tar.Reader) (map[string]string, error)
+	FetchAllFilesFromDirectory(name string, cv models.ChartVersion, directoryName string, tarf *tar.Reader) (map[string]string, error)
+
 }
 
 // HelmRepo implements the Repo interface for chartmuseum-like repositories
@@ -155,8 +158,8 @@ const (
 	schema = "schema"
 )
 
-// FetchFiles retrieves the important files of a chart and version from the repo
-func (r *HelmRepo) FetchFiles(name string, cv models.ChartVersion) (map[string]string, error) {
+
+func (r *HelmRepo) FetchTarChart(name string, cv models.ChartVersion) (*tar.Reader, error){
 	chartTarballURL := chartTarballURL(r.RepoInternal, cv)
 	req, err := http.NewRequest("GET", chartTarballURL, nil)
 	if err != nil {
@@ -183,6 +186,38 @@ func (r *HelmRepo) FetchFiles(name string, cv models.ChartVersion) (map[string]s
 	defer gzf.Close()
 
 	tarf := tar.NewReader(gzf)
+
+	return tarf, nil
+}
+
+// FetchFiles retrieves the important files of a chart and version from the repo
+func (r *HelmRepo) FetchAllFilesFromDirectory(name string, cv models.ChartVersion, directoryName string, tarChart *tar.Reader) (map[string]string, error) {
+
+	// decode escaped characters
+	// ie., "foo%2Fbar" should return "foo/bar"
+	decodedName, err := url.PathUnescape(name)
+	if err != nil {
+		log.Errorf("Cannot decode %s", name)
+		return nil, err
+	}
+
+	// get last part of the name
+	// ie., "foo/bar" should return "bar"
+	fixedName := path.Base(decodedName)
+
+	directoryPath := fixedName +"/"+ directoryName
+
+	filesInDirectory, err := extractDirectoryFilesFromTarball(directoryPath, tarChart)
+	if err != nil {
+		return nil, err
+	}
+
+	return filesInDirectory, nil
+}
+
+
+// FetchFiles retrieves the important files of a chart and version from the repo
+func (r *HelmRepo) FetchFiles(name string, cv models.ChartVersion, tarf *tar.Reader) (map[string]string, error) {
 
 	// decode escaped characters
 	// ie., "foo%2Fbar" should return "foo/bar"
@@ -362,8 +397,14 @@ func (r *OCIRegistry) Charts() ([]models.Chart, error) {
 	return []models.Chart{}, nil
 }
 
+
+func (r *OCIRegistry)  FetchTarChart(name string, cv models.ChartVersion) (*tar.Reader, error) {
+    // TBD
+    return nil, nil
+}
+
 // FetchFiles retrieves the important files of a chart and version from the repo
-func (r *OCIRegistry) FetchFiles(name string, cv models.ChartVersion) (map[string]string, error) {
+func (r *OCIRegistry) FetchFiles(name string, cv models.ChartVersion, tarf *tar.Reader) (map[string]string, error) {
 	// TBD
 	return map[string]string{
 		values: "",
@@ -371,6 +412,12 @@ func (r *OCIRegistry) FetchFiles(name string, cv models.ChartVersion) (map[strin
 		schema: "",
 	}, nil
 }
+
+func (r *OCIRegistry) FetchAllFilesFromDirectory(name string, cv models.ChartVersion, directoryName string, tarf *tar.Reader) (map[string]string, error){
+    // TBD
+    return map[string]string{}, nil
+}
+
 
 func getHelmRepo(namespace, name, repoURL, authorizationHeader string) (Repo, error) {
 	url, err := parseRepoURL(repoURL)
@@ -445,6 +492,37 @@ func newChart(entry helmrepo.ChartVersions, r *models.Repo) models.Chart {
 	return c
 }
 
+func extractDirectoryFilesFromTarball(directoryPath string, tarf *tar.Reader) (map[string]string, error) {
+    ret := make(map[string]string)
+    for {
+        header, err := tarf.Next()
+        if err == io.EOF {
+            break
+        }
+        if err != nil {
+            return ret, err
+        }
+
+        var fixedDirectoryPath string
+
+        if strings.HasSuffix(directoryPath,"/") == true {
+            fixedDirectoryPath = directoryPath
+	    } else {
+		    fixedDirectoryPath = directoryPath + "/"
+	    }
+
+
+        if strings.HasPrefix(header.Name, fixedDirectoryPath) {
+            var b bytes.Buffer
+            io.Copy(&b, tarf)
+            ret[strings.ReplaceAll(header.Name,fixedDirectoryPath,"")] = string(b.Bytes())
+
+        }
+
+     }
+     return ret, nil
+}
+
 func extractFilesFromTarball(filenames map[string]string, tarf *tar.Reader) (map[string]string, error) {
 	ret := make(map[string]string)
 	for {
@@ -517,7 +595,7 @@ type fileImporter struct {
 	manager assetManager
 }
 
-func (f *fileImporter) fetchFiles(charts []models.Chart, repo Repo) {
+func (f *fileImporter) fetchFiles(charts []models.Chart, repo Repo, customFilesDirectoryName string) {
 	// Process 10 charts at a time
 	numWorkers := 10
 	iconJobs := make(chan models.Chart, numWorkers)
@@ -527,7 +605,7 @@ func (f *fileImporter) fetchFiles(charts []models.Chart, repo Repo) {
 	log.Debugf("starting %d workers", numWorkers)
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
-		go f.importWorker(&wg, iconJobs, chartFilesJobs, repo)
+		go f.importWorker(&wg, iconJobs, chartFilesJobs, repo, customFilesDirectoryName)
 	}
 
 	// Enqueue jobs to process chart icons
@@ -561,7 +639,7 @@ func (f *fileImporter) fetchFiles(charts []models.Chart, repo Repo) {
 	wg.Wait()
 }
 
-func (f *fileImporter) importWorker(wg *sync.WaitGroup, icons <-chan models.Chart, chartFiles <-chan importChartFilesJob, repo Repo) {
+func (f *fileImporter) importWorker(wg *sync.WaitGroup, icons <-chan models.Chart, chartFiles <-chan importChartFilesJob, repo Repo, customFilesDirectoryName string) {
 	defer wg.Done()
 	for c := range icons {
 		log.WithFields(log.Fields{"name": c.Name}).Debug("importing icon")
@@ -571,7 +649,15 @@ func (f *fileImporter) importWorker(wg *sync.WaitGroup, icons <-chan models.Char
 	}
 	for j := range chartFiles {
 		log.WithFields(log.Fields{"name": j.Name, "version": j.ChartVersion.Version}).Debug("importing readme and values")
-		if err := f.fetchAndImportFiles(j.Name, repo, j.ChartVersion); err != nil {
+
+		var err error
+		if customFilesDirectoryName != "" {
+		    err = f.fetchAndImportFilesWithCustomDirectory(j.Name, customFilesDirectoryName , repo, j.ChartVersion)
+		}else {
+	        err = f.fetchAndImportFiles(j.Name, repo, j.ChartVersion)
+		}
+
+		if err != nil {
 			log.WithFields(log.Fields{"name": j.Name, "version": j.ChartVersion.Version}).WithError(err).Error("failed to import files")
 		}
 	}
@@ -650,12 +736,71 @@ func (f *fileImporter) fetchAndImportFiles(name string, repo Repo, cv models.Cha
 	}
 	log.WithFields(log.Fields{"name": name, "version": cv.Version}).Debug("fetching files")
 
-	files, err := repo.FetchFiles(name, cv)
+    tarChart, err := repo.FetchTarChart(name, cv)
+
+	if err != nil {
+    	return err
+    }
+
+	files, err := repo.FetchFiles(name, cv, tarChart)
 	if err != nil {
 		return err
 	}
 
 	chartFiles := models.ChartFiles{ID: chartFilesID, Repo: &models.Repo{Name: r.Name, Namespace: r.Namespace, URL: r.URL}, Digest: cv.Digest}
+	if v, ok := files[readme]; ok {
+		chartFiles.Readme = v
+	} else {
+		log.WithFields(log.Fields{"name": name, "version": cv.Version}).Info("README.md not found")
+	}
+	if v, ok := files[values]; ok {
+		chartFiles.Values = v
+	} else {
+		log.WithFields(log.Fields{"name": name, "version": cv.Version}).Info("values.yaml not found")
+	}
+	if v, ok := files[schema]; ok {
+		chartFiles.Schema = v
+	} else {
+		log.WithFields(log.Fields{"name": name, "version": cv.Version}).Info("values.schema.json not found")
+	}
+
+	// inserts the chart files if not already indexed, or updates the existing
+	// entry if digest has changed
+	return f.manager.insertFiles(chartID, chartFiles)
+}
+
+
+func (f *fileImporter) fetchAndImportFilesWithCustomDirectory(name string, customDirectoryName string , repo Repo, cv models.ChartVersion) error {
+	r := repo.Repo()
+	chartID := fmt.Sprintf("%s/%s", r.Name, name)
+	chartFilesID := fmt.Sprintf("%s-%s", chartID, cv.Version)
+
+	// Check if we already have indexed files for this chart version and digest
+	if f.manager.filesExist(models.Repo{Namespace: r.Namespace, Name: r.Name}, chartFilesID, cv.Digest) {
+		log.WithFields(log.Fields{"name": name, "version": cv.Version}).Debug("skipping existing files")
+		return nil
+	}
+	log.WithFields(log.Fields{"name": name, "version": cv.Version}).Debug("fetching files")
+
+
+	tarChart, err := repo.FetchTarChart(name, cv)
+
+	if err != nil {
+    	return err
+    }
+
+	files, err := repo.FetchFiles(name, cv, tarChart)
+	if err != nil {
+		return err
+	}
+
+	customFiles, err := repo.FetchAllFilesFromDirectory(name, cv, customDirectoryName, tarChart )
+    if err != nil {
+    	return err
+    }
+
+
+	chartFiles := models.ChartFiles{ID: chartFilesID, Repo: &models.Repo{Name: r.Name, Namespace: r.Namespace, URL: r.URL}, Digest: cv.Digest, CustomFiles: customFiles}
 	if v, ok := files[readme]; ok {
 		chartFiles.Readme = v
 	} else {
