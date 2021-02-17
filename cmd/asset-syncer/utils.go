@@ -109,7 +109,7 @@ type Repo interface {
 	Checksum() (string, error)
 	Repo() *models.RepoInternal
 	Charts() ([]models.Chart, error)
-	FetchTarChart(name string, cv models.ChartVersion) (*tar.Reader, error)
+	FetchTarChart(name string, cv models.ChartVersion) ([]byte, error)
 	FetchFiles(name string, cv models.ChartVersion, tarf *tar.Reader) (map[string]string, error)
 	FetchAllFilesFromDirectory(name string, cv models.ChartVersion, directoryName string, tarf *tar.Reader) (map[string]string, error)
 
@@ -159,7 +159,7 @@ const (
 )
 
 
-func (r *HelmRepo) FetchTarChart(name string, cv models.ChartVersion) (*tar.Reader, error){
+func (r *HelmRepo) FetchTarChart(name string, cv models.ChartVersion) ([]byte, error){
 	chartTarballURL := chartTarballURL(r.RepoInternal, cv)
 	req, err := http.NewRequest("GET", chartTarballURL, nil)
 	if err != nil {
@@ -174,20 +174,16 @@ func (r *HelmRepo) FetchTarChart(name string, cv models.ChartVersion) (*tar.Read
 	if err != nil {
 		return nil, err
 	}
+
 	defer res.Body.Close()
 
-	// We read the whole chart into memory, this should be okay since the chart
-	// tarball needs to be small enough to fit into a GRPC call (Tiller
-	// requirement)
-	gzf, err := gzip.NewReader(res.Body)
+	bodyData, err  := ioutil.ReadAll(res.Body)
 	if err != nil {
-		return nil, err
-	}
-	defer gzf.Close()
+    	return nil, err
+    }
 
-	tarf := tar.NewReader(gzf)
+    return bodyData, nil
 
-	return tarf, nil
 }
 
 // FetchFiles retrieves the important files of a chart and version from the repo
@@ -206,6 +202,7 @@ func (r *HelmRepo) FetchAllFilesFromDirectory(name string, cv models.ChartVersio
 	fixedName := path.Base(decodedName)
 
 	directoryPath := fixedName +"/"+ directoryName
+
 
 	filesInDirectory, err := extractDirectoryFilesFromTarball(directoryPath, tarChart)
 	if err != nil {
@@ -398,7 +395,7 @@ func (r *OCIRegistry) Charts() ([]models.Chart, error) {
 }
 
 
-func (r *OCIRegistry)  FetchTarChart(name string, cv models.ChartVersion) (*tar.Reader, error) {
+func (r *OCIRegistry)  FetchTarChart(name string, cv models.ChartVersion) ([]byte, error) {
     // TBD
     return nil, nil
 }
@@ -510,7 +507,6 @@ func extractDirectoryFilesFromTarball(directoryPath string, tarf *tar.Reader) (m
 	    } else {
 		    fixedDirectoryPath = directoryPath + "/"
 	    }
-
 
         if strings.HasPrefix(header.Name, fixedDirectoryPath) {
             var b bytes.Buffer
@@ -736,13 +732,22 @@ func (f *fileImporter) fetchAndImportFiles(name string, repo Repo, cv models.Cha
 	}
 	log.WithFields(log.Fields{"name": name, "version": cv.Version}).Debug("fetching files")
 
-    tarChart, err := repo.FetchTarChart(name, cv)
+    tarChartByte, err := repo.FetchTarChart(name, cv)
 
 	if err != nil {
     	return err
     }
 
-	files, err := repo.FetchFiles(name, cv, tarChart)
+    gzf, err := gzip.NewReader(bytes.NewReader(tarChartByte))
+
+    if err != nil {
+    	return err
+    }
+
+    defer gzf.Close()
+
+	files, err := repo.FetchFiles(name, cv, tar.NewReader(gzf))
+
 	if err != nil {
 		return err
 	}
@@ -783,18 +788,36 @@ func (f *fileImporter) fetchAndImportFilesWithCustomDirectory(name string, custo
 	log.WithFields(log.Fields{"name": name, "version": cv.Version}).Debug("fetching files")
 
 
-	tarChart, err := repo.FetchTarChart(name, cv)
+	tarChartByte, err := repo.FetchTarChart(name, cv)
+
+    if err != nil {
+        return err
+    }
+
+    gzf, err := gzip.NewReader(bytes.NewReader(tarChartByte))
+    if err != nil {
+        return err
+    }
+
+    defer gzf.Close()
 
 	if err != nil {
     	return err
     }
 
-	files, err := repo.FetchFiles(name, cv, tarChart)
+	files, err := repo.FetchFiles(name, cv, tar.NewReader(gzf))
 	if err != nil {
 		return err
 	}
 
-	customFiles, err := repo.FetchAllFilesFromDirectory(name, cv, customDirectoryName, tarChart )
+	tarChart, err := gzip.NewReader(bytes.NewReader(tarChartByte))
+    if err != nil {
+        return  err
+    }
+
+    defer tarChart.Close()
+
+	customFiles, err := repo.FetchAllFilesFromDirectory(name, cv, customDirectoryName, tar.NewReader(tarChart) )
     if err != nil {
     	return err
     }

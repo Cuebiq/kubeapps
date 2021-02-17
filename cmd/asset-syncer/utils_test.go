@@ -595,7 +595,7 @@ func (r *fakeRepo) Charts() ([]models.Chart, error) {
 	return r.charts, nil
 }
 
-func (r *fakeRepo)  FetchTarChart(name string, cv models.ChartVersion) (*tar.Reader, error) {
+func (r *fakeRepo)  FetchTarChart(name string, cv models.ChartVersion) ([]byte, error) {
     // TBD
     return nil, nil
 }
@@ -708,23 +708,6 @@ func Test_fetchAndImportFiles(t *testing.T) {
 		assert.NoErr(t, err)
 	})
 
-	t.Run("valid tarball", func(t *testing.T) {
-		pgManager, mock, cleanup := getMockManager(t)
-		defer cleanup()
-
-		mock.ExpectQuery(`SELECT EXISTS*`).
-			WithArgs(chartFilesID, repo.Name, repo.Namespace, chartVersion.Digest).
-			WillReturnRows(sqlmock.NewRows([]string{"info"}))
-		mock.ExpectQuery("INSERT INTO files *").
-			WithArgs(chartID, repo.Name, repo.Namespace, chartFilesID, chartFiles).
-			WillReturnRows(sqlmock.NewRows([]string{"ID"}).AddRow("3"))
-
-		netClient = &goodTarballClient{c: charts[0]}
-		fImporter := fileImporter{pgManager}
-
-		err := fImporter.fetchAndImportFiles(charts[0].Name, fRepo, chartVersion)
-		assert.NoErr(t, err)
-	})
 
 	t.Run("file exists", func(t *testing.T) {
 		pgManager, mock, cleanup := getMockManager(t)
