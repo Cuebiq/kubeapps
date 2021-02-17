@@ -708,6 +708,29 @@ func Test_fetchAndImportFiles(t *testing.T) {
 		assert.NoErr(t, err)
 	})
 
+	t.Run("valid tarball", func(t *testing.T) {
+		pgManager, mock, cleanup := getMockManager(t)
+		defer cleanup()
+
+		mock.ExpectQuery(`SELECT EXISTS*`).
+			WithArgs(chartFilesID, repo.Name, repo.Namespace, chartVersion.Digest).
+			WillReturnRows(sqlmock.NewRows([]string{"info"}))
+		mock.ExpectQuery("INSERT INTO files *").
+			WithArgs(chartID, repo.Name, repo.Namespace, chartFilesID, chartFiles).
+			WillReturnRows(sqlmock.NewRows([]string{"ID"}).AddRow("3"))
+
+		netClient = &goodTarballClient{c: charts[0]}
+		fImporter := fileImporter{pgManager}
+
+		helmRepo := &HelmRepo{
+        	content:      []byte{},
+        	RepoInternal: repo,
+        }
+
+		err := fImporter.fetchAndImportFiles(charts[0].Name, helmRepo, chartVersion)
+		assert.NoErr(t, err)
+	})
+
 
 	t.Run("file exists", func(t *testing.T) {
 		pgManager, mock, cleanup := getMockManager(t)
