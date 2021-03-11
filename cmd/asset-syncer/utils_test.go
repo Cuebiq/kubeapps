@@ -595,7 +595,7 @@ func (r *fakeRepo) Charts() ([]models.Chart, error) {
 	return r.charts, nil
 }
 
-func (r *fakeRepo)  FetchTarChart(name string, cv models.ChartVersion) (*tar.Reader, error) {
+func (r *fakeRepo)  FetchTarChart(name string, cv models.ChartVersion) ([]byte, error) {
     // TBD
     return nil, nil
 }
@@ -722,9 +722,15 @@ func Test_fetchAndImportFiles(t *testing.T) {
 		netClient = &goodTarballClient{c: charts[0]}
 		fImporter := fileImporter{pgManager}
 
-		err := fImporter.fetchAndImportFiles(charts[0].Name, fRepo, chartVersion)
+		helmRepo := &HelmRepo{
+        	content:      []byte{},
+        	RepoInternal: repo,
+        }
+
+		err := fImporter.fetchAndImportFiles(charts[0].Name, helmRepo, chartVersion)
 		assert.NoErr(t, err)
 	})
+
 
 	t.Run("file exists", func(t *testing.T) {
 		pgManager, mock, cleanup := getMockManager(t)
