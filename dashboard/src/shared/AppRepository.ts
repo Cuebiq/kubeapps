@@ -29,15 +29,28 @@ export class AppRepository {
     name: string,
     namespace: string,
     repoURL: string,
+    type: string,
     authHeader: string,
     customCA: string,
     syncJobPodTemplate: any,
     registrySecrets: string[],
+    ociRepositories: string[],
+    skipTLS: boolean,
   ) {
     const { data } = await axiosWithAuth.put<ICreateAppRepositoryResponse>(
       url.backend.apprepositories.update(cluster, namespace, name),
       {
-        appRepository: { name, repoURL, authHeader, customCA, syncJobPodTemplate, registrySecrets },
+        appRepository: {
+          name,
+          repoURL,
+          type,
+          authHeader,
+          customCA,
+          syncJobPodTemplate,
+          registrySecrets,
+          ociRepositories,
+          tlsInsecureSkipVerify: skipTLS,
+        },
       },
     );
     return data;
@@ -58,15 +71,28 @@ export class AppRepository {
     name: string,
     namespace: string,
     repoURL: string,
+    type: string,
     authHeader: string,
     customCA: string,
     syncJobPodTemplate: any,
     registrySecrets: string[],
+    ociRepositories: string[],
+    skipTLS: boolean,
   ) {
     const { data } = await axiosWithAuth.post<ICreateAppRepositoryResponse>(
       url.backend.apprepositories.create(cluster, namespace),
       {
-        appRepository: { name, repoURL, authHeader, customCA, syncJobPodTemplate, registrySecrets },
+        appRepository: {
+          name,
+          repoURL,
+          authHeader,
+          type,
+          customCA,
+          syncJobPodTemplate,
+          registrySecrets,
+          ociRepositories,
+          tlsInsecureSkipVerify: skipTLS,
+        },
       },
     );
     return data;
@@ -75,11 +101,21 @@ export class AppRepository {
   public static async validate(
     cluster: string,
     repoURL: string,
+    type: string,
     authHeader: string,
     customCA: string,
+    ociRepositories: string[],
+    skipTLS: boolean,
   ) {
     const { data } = await axiosWithAuth.post<any>(url.backend.apprepositories.validate(cluster), {
-      appRepository: { repoURL, authHeader, customCA },
+      appRepository: {
+        repoURL,
+        type,
+        authHeader,
+        customCA,
+        ociRepositories,
+        tlsInsecureSkipVerify: skipTLS,
+      },
     });
     return data;
   }

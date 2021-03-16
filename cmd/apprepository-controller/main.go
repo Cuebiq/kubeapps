@@ -52,6 +52,7 @@ type Config struct {
 	UserAgentComment         string
 	Crontab                  string
 	CustomFilesDirectory     string
+	TTLSecondsAfterFinished  string
 	ReposPerNamespace        bool
 
 	// Args are the positional (non-flag) command-line arguments.
@@ -82,6 +83,8 @@ func parseFlags(progname string, args []string) (config *Config, output string, 
 	flagSet.StringVar(&conf.UserAgentComment, "user-agent-comment", "", "UserAgent comment used during outbound requests")
 	flagSet.StringVar(&conf.Crontab, "crontab", "*/10 * * * *", "CronTab to specify schedule")
 	flagSet.StringVar(&conf.CustomFilesDirectory, "custom-files-directory", "", "Directory where custom files are stored. Default no directory are take in consideration")
+	//DefaultLifeTimeTTL max sync lifetime job //https://kubernetes.io/docs/concepts/workloads/controllers/job/#clean-up-finished-jobs-automatically
+	flagSet.StringVar(&conf.TTLSecondsAfterFinished, "ttl-lifetime-afterfinished-job", "3600", "Lifetime limit after which the resource Jobs are deleted expressed in seconds by default is 3600 (1h) ")
 
 	err = flagSet.Parse(args)
 	if err != nil {
@@ -116,6 +119,7 @@ func main() {
 		"user-agent-comment":          conf.UserAgentComment,
 		"crontab":                     conf.Crontab,
 		"custom-files-directory":      conf.CustomFilesDirectory,
+        "ttl-lifetime-afterfinished-job": conf.TTLSecondsAfterFinished,
 	}).Info("apprepository-controller configured with these args:")
 
 	// set up signals so we handle the first shutdown signal gracefully

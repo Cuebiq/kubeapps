@@ -1,4 +1,5 @@
 use std::env;
+use std::convert::TryFrom;
 
 use anyhow::{Context, Result};
 use k8s_openapi::api::core::v1 as corev1;
@@ -6,12 +7,13 @@ use k8s_openapi::apimachinery::pkg::apis::meta::v1 as metav1;
 use k8s_openapi::Metadata;
 use kube::{
     api::{Api, PostParams},
-    Client, Config, CustomResource,
+    Client, Config,
+    Service,
 };
+use kube_derive::CustomResource;
 use log::debug;
 use native_tls::Identity;
 use openssl::{pkcs12::Pkcs12, pkey::PKey, x509::X509};
-use reqwest;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use thiserror::Error;
@@ -120,9 +122,10 @@ async fn call_pinniped_exchange(authorization: &str, k8s_api_server_url: &str, k
 
     let mut config = Config::new(Url::parse(k8s_api_server_url).context("Failed parsing url for exchange")?);
     config.default_ns = pinniped_namespace.clone();
-    let cert = reqwest::Certificate::from_pem(k8s_api_ca_cert_data)?;
-    config.root_cert = Some(vec![cert]);
-    let client = Client::new(config);
+    let x509 = X509::from_pem(k8s_api_ca_cert_data).context("error creating x509 from pem")?;
+    let der = x509.to_der().context("error creating der from x509")?;
+    config.root_cert = Some(vec!(der));
+    let client = Client::new(Service::try_from(config)?);
 
     let auth_token = match authorization.to_string().strip_prefix("Bearer ") {
         Some(a) => a.to_string(),
@@ -193,7 +196,7 @@ mod tests {
         match tokio_test::block_on(call_pinniped_exchange("authorization", "https://example.com", "not a cert".as_bytes())) {
             Ok(_) => anyhow::bail!("expected error"),
             Err(e) => {
-                assert!(e.is::<reqwest::Error>(), "got: {:#?}, want: request::Error", e);
+                assert!(e.is::<openssl::error::ErrorStack>(), "got: {:#?}, want: openssl::error::ErrorStack", e);
                 Ok(())
             },
         }

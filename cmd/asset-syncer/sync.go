@@ -52,12 +52,17 @@ var syncCmd = &cobra.Command{
 		}
 		defer manager.Close()
 
+		netClient, err := initNetClient(additionalCAFile, tlsInsecureSkipVerify)
+		if err != nil {
+			logrus.Fatal(err)
+		}
+
 		authorizationHeader := os.Getenv("AUTHORIZATION_HEADER")
 		var repoIface Repo
 		if args[2] == "helm" {
-			repoIface, err = getHelmRepo(namespace, args[0], args[1], authorizationHeader)
+			repoIface, err = getHelmRepo(namespace, args[0], args[1], authorizationHeader, netClient)
 		} else {
-			repoIface, err = getOCIRepo(namespace, args[0], args[1], authorizationHeader, ociRepositories)
+			repoIface, err = getOCIRepo(namespace, args[0], args[1], authorizationHeader, ociRepositories, netClient)
 		}
 		if err != nil {
 			logrus.Fatal(err)
@@ -90,7 +95,7 @@ var syncCmd = &cobra.Command{
 
 
 		// Fetch and store chart icons
-		fImporter := fileImporter{manager}
+		fImporter := fileImporter{manager, netClient}
 		fImporter.fetchFiles(charts, repoIface, customFilesDirectoryName)
 
 		// Update cache in the database

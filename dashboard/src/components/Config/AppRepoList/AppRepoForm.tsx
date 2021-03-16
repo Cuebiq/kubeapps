@@ -1,4 +1,5 @@
 import { CdsButton } from "@clr/react/button";
+import { CdsCheckbox } from "@clr/react/checkbox";
 import actions from "actions";
 import Alert from "components/js/Alert";
 import Column from "components/js/Column";
@@ -16,10 +17,13 @@ interface IAppRepoFormProps {
   onSubmit: (
     name: string,
     url: string,
+    type: string,
     authHeader: string,
     customCA: string,
     syncJobPodTemplate: string,
     registrySecrets: string[],
+    ociRepositories: string[],
+    skipTLS: boolean,
   ) => Promise<boolean>;
   onAfterInstall?: () => void;
   namespace: string;
@@ -32,6 +36,9 @@ const AUTH_METHOD_NONE = "none";
 const AUTH_METHOD_BASIC = "basic";
 const AUTH_METHOD_BEARER = "bearer";
 const AUTH_METHOD_CUSTOM = "custom";
+
+const TYPE_HELM = "helm";
+const TYPE_OCI = "oci";
 
 export function AppRepoForm(props: IAppRepoFormProps) {
   const { onSubmit, onAfterInstall, namespace, kubeappsNamespace, repo, secret } = props;
@@ -46,6 +53,10 @@ export function AppRepoForm(props: IAppRepoFormProps) {
   const [url, setURL] = useState("");
   const [customCA, setCustomCA] = useState("");
   const [syncJobPodTemplate, setSyncJobTemplate] = useState("");
+  const [type, setType] = useState(TYPE_HELM);
+  const [ociRepositories, setOCIRepositories] = useState("");
+  const [skipTLS, setSkipTLS] = useState(!!repo?.spec?.tlsInsecureSkipVerify);
+
   const [selectedImagePullSecrets, setSelectedImagePullSecrets] = useState(
     {} as { [key: string]: boolean },
   );
@@ -80,9 +91,12 @@ export function AppRepoForm(props: IAppRepoFormProps) {
     if (repo) {
       setName(repo.metadata.name);
       setURL(repo.spec?.url || "");
+      setType(repo.spec?.type || "");
       setSyncJobTemplate(
-        repo.spec?.syncJobPodTemplate ? yaml.safeDump(repo.spec?.syncJobPodTemplate) : "",
+        repo.spec?.syncJobPodTemplate ? yaml.dump(repo.spec?.syncJobPodTemplate) : "",
       );
+      setOCIRepositories(repo.spec?.ociRepositories?.join(", ") || "");
+      setSkipTLS(!!repo.spec?.tlsInsecureSkipVerify);
       if (secret) {
         if (secret.data["ca.crt"]) {
           setCustomCA(atob(secret.data["ca.crt"]));
@@ -123,12 +137,17 @@ export function AppRepoForm(props: IAppRepoFormProps) {
         finalHeader = `Bearer ${token}`;
         break;
     }
+    const ociRepoList = ociRepositories.length ? ociRepositories.split(",").map(r => r.trim()) : [];
+    // If the scheme is not specified, assume HTTPS. This is common for OCI registries
+    const finalURL = url.startsWith("http") ? url : `https://${url}`;
     // If the validation already failed and we try to reinstall,
     // skip validation and force install
     const force = validated === false;
     let currentlyValidated = validated;
     if (!validated && !force) {
-      currentlyValidated = await dispatch(actions.repos.validateRepo(url, finalHeader, customCA));
+      currentlyValidated = await dispatch(
+        actions.repos.validateRepo(finalURL, type, finalHeader, customCA, ociRepoList, skipTLS),
+      );
       setValidated(currentlyValidated);
     }
     if (currentlyValidated || force) {
@@ -137,11 +156,14 @@ export function AppRepoForm(props: IAppRepoFormProps) {
       );
       const success = await onSubmit(
         name,
-        url,
+        finalURL,
+        type,
         finalHeader,
         customCA,
         syncJobPodTemplate,
         imagePullSecretsNames,
+        ociRepoList,
+        skipTLS,
       );
       if (success && onAfterInstall) {
         onAfterInstall();
@@ -170,6 +192,10 @@ export function AppRepoForm(props: IAppRepoFormProps) {
     setAuthMethod(e.target.value);
     setValidated(undefined);
   };
+  const handleTypeRadioButtonChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setType(e.target.value);
+    setValidated(undefined);
+  };
   const handleUserChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setUser(e.target.value);
     setValidated(undefined);
@@ -180,6 +206,14 @@ export function AppRepoForm(props: IAppRepoFormProps) {
   };
   const handleSyncJobPodTemplateChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setSyncJobTemplate(e.target.value);
+    setValidated(undefined);
+  };
+  const handleOCIRepositoriesChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setOCIRepositories(e.target.value);
+    setValidated(undefined);
+  };
+  const handleSkipTLSChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSkipTLS(!skipTLS);
     setValidated(undefined);
   };
 
@@ -372,6 +406,69 @@ export function AppRepoForm(props: IAppRepoFormProps) {
           </Row>
         </div>
       </div>
+      <div className="clr-form-control">
+        <label className="clr-control-label">Repository Type</label>
+        <span className="clr-form-description">Select the chart storage type.</span>
+        <div className="clr-form-columns">
+          <Row>
+            <Column span={3}>
+              <label
+                htmlFor="kubeapps-repo-type-helm"
+                className="clr-control-label clr-control-label-radio"
+              >
+                <input
+                  type="radio"
+                  id="kubeapps-repo-type-helm"
+                  name="type"
+                  value={TYPE_HELM}
+                  checked={type === TYPE_HELM}
+                  onChange={handleTypeRadioButtonChange}
+                />
+                Helm Repository
+                <br />
+              </label>
+              <label
+                htmlFor="kubeapps-repo-type-oci"
+                className="clr-control-label clr-control-label-radio"
+              >
+                <input
+                  type="radio"
+                  id="kubeapps-repo-type-oci"
+                  name="type"
+                  value={TYPE_OCI}
+                  checked={type === TYPE_OCI}
+                  onChange={handleTypeRadioButtonChange}
+                />
+                OCI Registry
+                <br />
+              </label>
+            </Column>
+            <Column span={9}>
+              <div
+                className="column-valing-center clr-control-container"
+                hidden={type !== TYPE_OCI}
+              >
+                <label className="clr-control-label" htmlFor="kubeapps-repo-username">
+                  List of Repositories
+                </label>
+                <span className="clr-form-description">
+                  Include a list of comma-separated repositories that will be available in Kubeapps.
+                </span>
+                <div className="clr-textarea-wrapper">
+                  <textarea
+                    id="kubeapps-oci-repositories"
+                    rows={4}
+                    className="clr-textarea"
+                    placeholder={"nginx, jenkins"}
+                    value={ociRepositories}
+                    onChange={handleOCIRepositoriesChange}
+                  />
+                </div>
+              </div>
+            </Column>
+          </Row>
+        </div>
+      </div>
       {/* Only when using a namespace different than the Kubeapps namespace (Global)
               the repository can be associated with Docker Registry Credentials since
               the pull secret won't be available in all namespaces */
@@ -382,7 +479,7 @@ export function AppRepoForm(props: IAppRepoFormProps) {
           </label>
           <span className="clr-form-description">
             Select existing secret(s) to access a private Docker registry and pull images from it.
-            Note that this functionality is supported for Kubeapps with Helm3 only, more info{" "}
+            More info{" "}
             <a
               href={`https://github.com/kubeapps/kubeapps/blob/${appVersion}/docs/user/private-app-repository.md`}
               target="_blank"
@@ -414,9 +511,21 @@ export function AppRepoForm(props: IAppRepoFormProps) {
               className="clr-textarea"
               placeholder={"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"}
               value={customCA}
+              disabled={skipTLS}
               onChange={handleCustomCAChange}
             />
           </div>
+        </div>
+        <div className="clr-form-control">
+          <CdsCheckbox>
+            <label className="clr-control-label">Skip TLS Verification</label>
+            <input
+              id="kubeapps-repo-skip-tls"
+              type="checkbox"
+              checked={skipTLS}
+              onChange={handleSkipTLSChange}
+            />
+          </CdsCheckbox>
         </div>
       </div>
       <div className="clr-form-control">

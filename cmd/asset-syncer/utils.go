@@ -37,20 +37,25 @@ import (
 	"sync"
 	"time"
 
+	"github.com/containerd/containerd/remotes/docker"
 	"github.com/disintegration/imaging"
 	"github.com/ghodss/yaml"
 	"github.com/jinzhu/copier"
 	"github.com/kubeapps/common/datastore"
 	"github.com/kubeapps/kubeapps/pkg/chart/models"
+	"github.com/kubeapps/kubeapps/pkg/helm"
 	log "github.com/sirupsen/logrus"
 	"github.com/srwiley/oksvg"
 	"github.com/srwiley/rasterx"
+	h3chart "helm.sh/helm/v3/pkg/chart"
+	"k8s.io/helm/pkg/proto/hapi/chart"
 	helmrepo "k8s.io/helm/pkg/repo"
 )
 
 const (
 	defaultTimeoutSeconds = 10
 	additionalCAFile      = "/usr/local/share/ca-certificates/ca.crt"
+	numWorkers            = 10
 )
 
 type importChartFilesJob struct {
@@ -59,23 +64,34 @@ type importChartFilesJob struct {
 	ChartVersion models.ChartVersion
 }
 
+type pullChartJob struct {
+	AppName string
+	Tag     string
+}
+
+type pullChartResult struct {
+	Chart *models.Chart
+	Error error
+}
+
+type checkTagJob struct {
+	AppName string
+	Tag     string
+}
+
+type checkTagResult struct {
+	checkTagJob
+	isHelmChart bool
+	Error       error
+}
+
 type httpClient interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
-var netClient httpClient = &http.Client{}
-
 func parseRepoURL(repoURL string) (*url.URL, error) {
 	repoURL = strings.TrimSpace(repoURL)
 	return url.ParseRequestURI(repoURL)
-}
-
-func init() {
-	var err error
-	netClient, err = initNetClient(additionalCAFile)
-	if err != nil {
-		log.Fatal(err)
-	}
 }
 
 type assetManager interface {
@@ -119,6 +135,7 @@ type Repo interface {
 type HelmRepo struct {
 	content []byte
 	*models.RepoInternal
+	netClient httpClient
 }
 
 // Checksum returns the sha256 of the repo
@@ -170,7 +187,7 @@ func (r *HelmRepo) FetchTarChart(name string, cv models.ChartVersion) ([]byte, e
 		req.Header.Set("Authorization", r.AuthorizationHeader)
 	}
 
-	res, err := netClient.Do(req)
+	res, err := r.netClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -259,21 +276,23 @@ type TagList struct {
 type OCIRegistry struct {
 	repositories []string
 	*models.RepoInternal
-	tags map[string]TagList
+	tags   map[string]TagList
+	puller helm.ChartPuller
+	ociCli ociAPI
 }
 
-func doReq(url, authHeader string) ([]byte, error) {
+func doReq(url string, cli httpClient, headers map[string]string) ([]byte, error) {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	req.Header.Set("User-Agent", userAgent())
-	if len(authHeader) > 0 {
-		req.Header.Set("Authorization", authHeader)
+	for header, content := range headers {
+		req.Header.Set(header, content)
 	}
 
-	res, err := netClient.Do(req)
+	res, err := cli.Do(req)
 	if res != nil {
 		defer res.Body.Close()
 	}
@@ -282,39 +301,147 @@ func doReq(url, authHeader string) ([]byte, error) {
 	}
 
 	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("request failed: %v", err)
+		errC, err := ioutil.ReadAll(res.Body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read error content: %v", err)
+		}
+		return nil, fmt.Errorf("request failed: %v", string(errC))
 	}
 
 	return ioutil.ReadAll(res.Body)
 }
 
+// OCILayer represents a single OCI layer
+type OCILayer struct {
+	MediaType string `json:"mediaType"`
+	Digest    string `json:"digest"`
+	Size      int    `json:"size"`
+}
+
+// OCIManifest representation
+type OCIManifest struct {
+	Schema int        `json:"schema"`
+	Config OCILayer   `json:"config"`
+	Layers []OCILayer `json:"layers"`
+}
+
+type ociAPI interface {
+	TagList(appName string) (*TagList, error)
+	IsHelmChart(appName, tag string) (bool, error)
+}
+
+type ociAPICli struct {
+	authHeader string
+	url        *url.URL
+	netClient  httpClient
+}
+
+// TagList retrieves the list of tags for an asset
+func (o *ociAPICli) TagList(appName string) (*TagList, error) {
+	url := *o.url
+	url.Path = path.Join("v2", url.Path, appName, "tags", "list")
+	data, err := doReq(url.String(), o.netClient, map[string]string{"Authorization": o.authHeader})
+	if err != nil {
+		return nil, err
+	}
+
+	var appTags TagList
+	err = json.Unmarshal(data, &appTags)
+	if err != nil {
+		return nil, err
+	}
+	return &appTags, nil
+}
+
+func (o *ociAPICli) IsHelmChart(appName, tag string) (bool, error) {
+	repoURL := *o.url
+	repoURL.Path = path.Join("v2", repoURL.Path, appName, "manifests", tag)
+	log.Debugf("getting tag %s", repoURL.String())
+	manifestData, err := doReq(
+		repoURL.String(),
+		o.netClient,
+		map[string]string{
+			"Authorization": o.authHeader,
+			"Accept":        "application/vnd.oci.image.manifest.v1+json",
+		})
+	if err != nil {
+		return false, err
+	}
+	var manifest OCIManifest
+	err = json.Unmarshal(manifestData, &manifest)
+	if err != nil {
+		return false, err
+	}
+	return manifest.Config.MediaType == helm.HelmChartConfigMediaType, nil
+}
+
+func tagCheckerWorker(o ociAPI, tagJobs <-chan checkTagJob, resultChan chan checkTagResult) {
+	for j := range tagJobs {
+		isHelmChart, err := o.IsHelmChart(j.AppName, j.Tag)
+		resultChan <- checkTagResult{j, isHelmChart, err}
+	}
+}
+
 // Checksum returns the sha256 of the repo by concatenating tags for
 // all repositories within the registry and returning the sha256.
+// Caveat: Mutated image tags won't be detected as new
 func (r *OCIRegistry) Checksum() (string, error) {
-	content := []byte{}
-	tags := map[string]TagList{}
-	for _, appName := range r.repositories {
-		url, err := parseRepoURL(r.RepoInternal.URL)
-		if err != nil {
-			return "", err
-		}
-		// Retrieve the list of tags to add it to the list
-		// Caveat: Mutated image tags won't be detected as new
-		url.Path = path.Join("v2", url.Path, appName, "tags", "list")
-		data, err := doReq(url.String(), r.RepoInternal.AuthorizationHeader)
-		if err != nil {
-			return "", err
-		}
+	r.tags = map[string]TagList{}
+	checktagJobs := make(chan checkTagJob, numWorkers)
+	tagcheckRes := make(chan checkTagResult, numWorkers)
+	var wg sync.WaitGroup
 
-		var appTags TagList
-		err = json.Unmarshal(data, &appTags)
+	// Process 10 tags at a time
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			tagCheckerWorker(r.ociCli, checktagJobs, tagcheckRes)
+			wg.Done()
+		}()
+	}
+	go func() {
+		wg.Wait()
+		close(tagcheckRes)
+	}()
+
+	unfilteredTags := map[string]TagList{}
+	for _, appName := range r.repositories {
+		tags, err := r.ociCli.TagList(appName)
 		if err != nil {
 			return "", err
 		}
-		tags[appName] = appTags
-		content = append(content, data...)
+		unfilteredTags[appName] = *tags
 	}
-	r.tags = tags
+
+	go func() {
+		for _, appName := range r.repositories {
+			for _, tag := range unfilteredTags[appName].Tags {
+				checktagJobs <- checkTagJob{AppName: appName, Tag: tag}
+			}
+		}
+		close(checktagJobs)
+	}()
+
+	// Start receiving tags
+	for res := range tagcheckRes {
+		if res.Error == nil {
+			if res.isHelmChart {
+				r.tags[res.AppName] = TagList{
+					Name: unfilteredTags[res.AppName].Name,
+					Tags: append(r.tags[res.AppName].Tags, res.Tag),
+				}
+				sort.Strings(r.tags[res.AppName].Tags)
+			}
+		} else {
+			log.Errorf("failed to pull chart. Got %v", res.Error)
+		}
+	}
+
+	log.Debugf("Final list of tags: %v", r.tags)
+	content, err := json.Marshal(r.tags)
+	if err != nil {
+		return "", err
+	}
 
 	return getSha256(content)
 }
@@ -354,6 +481,10 @@ func extractFilesFromBuffer(buf *bytes.Buffer) (*artifactFiles, error) {
 		}
 
 		compressedFileName := header.Name
+		if len(strings.Split(compressedFileName, "/")) > 2 {
+			// We are only interested on files within the root directory
+			continue
+		}
 
 		switch header.Typeflag {
 		case tar.TypeDir:
@@ -362,13 +493,9 @@ func extractFilesFromBuffer(buf *bytes.Buffer) (*artifactFiles, error) {
 			filename := strings.ToLower(path.Base(compressedFileName))
 			if importantFiles[filename] {
 				// Read content
-				data := make([]byte, header.Size)
-				_, err := tarReader.Read(data)
-				if err != nil && err != io.EOF {
-					return nil, fmt.Errorf("failed to read %s. Got: %v", compressedFileName, err)
-				}
-				for err != io.EOF {
-					_, err = tarReader.Read(data)
+				data, err := ioutil.ReadAll(tarReader)
+				if err != nil {
+					return nil, err
 				}
 				switch filename {
 				case "chart.yaml":
@@ -388,14 +515,130 @@ func extractFilesFromBuffer(buf *bytes.Buffer) (*artifactFiles, error) {
 	return result, nil
 }
 
-// Charts retrieve the list of charts exposed in the repo
-func (r *OCIRegistry) Charts() ([]models.Chart, error) {
-	// TBD
-	return []models.Chart{}, nil
+func pullAndExtract(repoURL *url.URL, appName, tag string, puller helm.ChartPuller, r *OCIRegistry) (*models.Chart, error) {
+	ref := path.Join(repoURL.Host, repoURL.Path, fmt.Sprintf("%s:%s", appName, tag))
+
+	chartBuffer, digest, err := puller.PullOCIChart(ref)
+	if err != nil {
+		return nil, err
+	}
+
+	// Extract
+	files, err := extractFilesFromBuffer(chartBuffer)
+	if err != nil {
+		return nil, err
+	}
+	chartMetadata := h3chart.Metadata{}
+	err = yaml.Unmarshal([]byte(files.Metadata), &chartMetadata)
+	if err != nil {
+		return nil, err
+	}
+
+	// Format Data
+	chartVersion := models.ChartVersion{
+		Version:    chartMetadata.Version,
+		AppVersion: chartMetadata.AppVersion,
+		Digest:     digest,
+		URLs:       chartMetadata.Sources,
+		Readme:     files.Readme,
+		Values:     files.Values,
+		Schema:     files.Schema,
+	}
+
+	maintainers := []chart.Maintainer{}
+	for _, m := range chartMetadata.Maintainers {
+		maintainers = append(maintainers, chart.Maintainer{
+			Name:  m.Name,
+			Email: m.Email,
+			Url:   m.URL,
+		})
+	}
+
+	// Encode repository names to store them in the database.
+	encodedAppName := url.PathEscape(appName)
+
+	return &models.Chart{
+		ID:            path.Join(r.Name, encodedAppName),
+		Name:          encodedAppName,
+		Repo:          &models.Repo{Namespace: r.Namespace, Name: r.Name, URL: r.URL, Type: r.Type},
+		Description:   chartMetadata.Description,
+		Home:          chartMetadata.Home,
+		Keywords:      chartMetadata.Keywords,
+		Maintainers:   maintainers,
+		Sources:       chartMetadata.Sources,
+		Icon:          chartMetadata.Icon,
+		Category:      chartMetadata.Annotations["category"],
+		ChartVersions: []models.ChartVersion{chartVersion},
+	}, nil
 }
 
+func chartImportWorker(repoURL *url.URL, r *OCIRegistry, chartJobs <-chan pullChartJob, resultChan chan pullChartResult) {
+	for j := range chartJobs {
+		log.WithFields(log.Fields{"name": j.AppName, "tag": j.Tag}).Debug("pulling chart")
+		chart, err := pullAndExtract(repoURL, j.AppName, j.Tag, r.puller, r)
+		resultChan <- pullChartResult{chart, err}
+	}
+}
 
-func (r *OCIRegistry)  FetchTarChart(name string, cv models.ChartVersion) ([]byte, error) {
+// Charts retrieve the list of charts exposed in the repo
+func (r *OCIRegistry) Charts() ([]models.Chart, error) {
+	result := map[string]*models.Chart{}
+	url, err := parseRepoURL(r.RepoInternal.URL)
+	if err != nil {
+		return nil, err
+	}
+
+	chartJobs := make(chan pullChartJob, numWorkers)
+	chartResults := make(chan pullChartResult, numWorkers)
+	var wg sync.WaitGroup
+	// Process 10 charts at a time
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			chartImportWorker(url, r, chartJobs, chartResults)
+			wg.Done()
+		}()
+	}
+	// When we know all workers have sent their data in chartChan, close it.
+	go func() {
+		wg.Wait()
+		close(chartResults)
+	}()
+
+	log.Debugf("starting %d workers", numWorkers)
+	go func() {
+		for _, appName := range r.repositories {
+			for _, tag := range r.tags[appName].Tags {
+				chartJobs <- pullChartJob{AppName: appName, Tag: tag}
+			}
+		}
+		close(chartJobs)
+	}()
+
+	// Start receiving charts
+	for res := range chartResults {
+		if res.Error == nil {
+			ch := res.Chart
+			log.Debugf("received chart %s from channel", ch.ID)
+			if r, ok := result[ch.ID]; ok {
+				// Chart already exists, append version
+				r.ChartVersions = append(result[ch.ID].ChartVersions, ch.ChartVersions...)
+			} else {
+				result[ch.ID] = ch
+			}
+		} else {
+			log.Errorf("failed to pull chart. Got %v", res.Error)
+		}
+	}
+
+	charts := []models.Chart{}
+	for _, c := range result {
+		charts = append(charts, *c)
+	}
+	return charts, nil
+}
+
+func (r *OCIRegistry) FetchTarChart(name string, cv models.ChartVersion) ([]byte, error) {
     // TBD
     return nil, nil
 }
@@ -404,53 +647,69 @@ func (r *OCIRegistry)  FetchTarChart(name string, cv models.ChartVersion) ([]byt
 func (r *OCIRegistry) FetchFiles(name string, cv models.ChartVersion, tarf *tar.Reader) (map[string]string, error) {
 	// TBD
 	return map[string]string{
-		values: "",
-		readme: "",
-		schema: "",
+		values: cv.Values,
+		readme: cv.Readme,
+		schema: cv.Schema,
 	}, nil
 }
-
 func (r *OCIRegistry) FetchAllFilesFromDirectory(name string, cv models.ChartVersion, directoryName string, tarf *tar.Reader) (map[string]string, error){
     // TBD
     return map[string]string{}, nil
 }
 
 
-func getHelmRepo(namespace, name, repoURL, authorizationHeader string) (Repo, error) {
+func getHelmRepo(namespace, name, repoURL, authorizationHeader string, netClient httpClient) (Repo, error) {
 	url, err := parseRepoURL(repoURL)
 	if err != nil {
 		log.WithFields(log.Fields{"url": repoURL}).WithError(err).Error("failed to parse URL")
 		return nil, err
 	}
 
-	repoBytes, err := fetchRepoIndex(url.String(), authorizationHeader)
+	repoBytes, err := fetchRepoIndex(url.String(), authorizationHeader, netClient)
 	if err != nil {
 		return nil, err
 	}
 
-	return &HelmRepo{content: repoBytes, RepoInternal: &models.RepoInternal{Namespace: namespace, Name: name, URL: url.String(), AuthorizationHeader: authorizationHeader}}, nil
-}
-
-func getOCIRepo(namespace, name, repoURL, authorizationHeader string, ociRepos []string) (Repo, error) {
-	url, err := parseRepoURL(repoURL)
-	if err != nil {
-		log.WithFields(log.Fields{"url": repoURL}).WithError(err).Error("failed to parse URL")
-		return nil, err
-	}
-	return &OCIRegistry{
-		repositories: ociRepos,
-		RepoInternal: &models.RepoInternal{Namespace: namespace, Name: name, URL: url.String(), AuthorizationHeader: authorizationHeader},
+	return &HelmRepo{
+		content: repoBytes,
+		RepoInternal: &models.RepoInternal{
+			Namespace:           namespace,
+			Name:                name,
+			URL:                 url.String(),
+			AuthorizationHeader: authorizationHeader,
+		},
+		netClient: netClient,
 	}, nil
 }
 
-func fetchRepoIndex(url, authHeader string) ([]byte, error) {
+func getOCIRepo(namespace, name, repoURL, authorizationHeader string, ociRepos []string, netClient *http.Client) (Repo, error) {
+	url, err := parseRepoURL(repoURL)
+	if err != nil {
+		log.WithFields(log.Fields{"url": repoURL}).WithError(err).Error("failed to parse URL")
+		return nil, err
+	}
+	headers := http.Header{}
+	if authorizationHeader != "" {
+		headers["Authorization"] = []string{authorizationHeader}
+	}
+	ociResolver := docker.NewResolver(docker.ResolverOptions{Headers: headers, Client: netClient})
+
+	return &OCIRegistry{
+		repositories: ociRepos,
+		RepoInternal: &models.RepoInternal{Namespace: namespace, Name: name, URL: url.String(), AuthorizationHeader: authorizationHeader},
+		puller:       &helm.OCIPuller{Resolver: ociResolver},
+		ociCli:       &ociAPICli{authHeader: authorizationHeader, url: url, netClient: netClient},
+	}, nil
+}
+
+func fetchRepoIndex(url, authHeader string, cli httpClient) ([]byte, error) {
 	indexURL, err := parseRepoURL(url)
 	if err != nil {
 		log.WithFields(log.Fields{"url": url}).WithError(err).Error("failed to parse URL")
 		return nil, err
 	}
 	indexURL.Path = path.Join(indexURL.Path, "index.yaml")
-	return doReq(indexURL.String(), authHeader)
+	return doReq(indexURL.String(), cli, map[string]string{"Authorization": authHeader})
 }
 
 func parseRepoIndex(body []byte) (*helmrepo.IndexFile, error) {
@@ -555,7 +814,7 @@ func chartTarballURL(r *models.RepoInternal, cv models.ChartVersion) string {
 	return source
 }
 
-func initNetClient(additionalCA string) (*http.Client, error) {
+func initNetClient(additionalCA string, skipTLS bool) (*http.Client, error) {
 	// Get the SystemCertPool, continue with an empty pool on error
 	caCertPool, _ := x509.SystemCertPool()
 	if caCertPool == nil {
@@ -580,7 +839,8 @@ func initNetClient(additionalCA string) (*http.Client, error) {
 		Timeout: time.Second * defaultTimeoutSeconds,
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
-				RootCAs: caCertPool,
+				InsecureSkipVerify: skipTLS,
+				RootCAs:            caCertPool,
 			},
 			Proxy: http.ProxyFromEnvironment,
 		},
@@ -588,12 +848,11 @@ func initNetClient(additionalCA string) (*http.Client, error) {
 }
 
 type fileImporter struct {
-	manager assetManager
+	manager   assetManager
+	netClient httpClient
 }
 
 func (f *fileImporter) fetchFiles(charts []models.Chart, repo Repo, customFilesDirectoryName string) {
-	// Process 10 charts at a time
-	numWorkers := 10
 	iconJobs := make(chan models.Chart, numWorkers)
 	chartFilesJobs := make(chan importChartFilesJob, numWorkers)
 	var wg sync.WaitGroup
@@ -674,7 +933,7 @@ func (f *fileImporter) fetchAndImportIcon(c models.Chart, r *models.RepoInternal
 		req.Header.Set("Authorization", r.AuthorizationHeader)
 	}
 
-	res, err := netClient.Do(req)
+	res, err := f.netClient.Do(req)
 	if res != nil {
 		defer res.Body.Close()
 	}

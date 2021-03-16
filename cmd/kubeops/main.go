@@ -31,15 +31,14 @@ import (
 const clustersCAFilesPrefix = "/etc/additional-clusters-cafiles"
 
 var (
-	additionalClustersConfigPath string
-	clustersConfigPath           string
-	assetsvcURL                  string
-	helmDriverArg                string
-	listLimit                    int
-	pinnipedProxyURL             string
-	settings                     environment.EnvSettings
-	timeout                      int64
-	userAgentComment             string
+	clustersConfigPath string
+	assetsvcURL        string
+	helmDriverArg      string
+	listLimit          int
+	pinnipedProxyURL   string
+	settings           environment.EnvSettings
+	timeout            int64
+	userAgentComment   string
 )
 
 func init() {
@@ -51,7 +50,6 @@ func init() {
 	// Default timeout from https://github.com/helm/helm/blob/b0b0accdfc84e154b3d48ec334cd5b4f9b345667/cmd/helm/install.go#L216
 	pflag.Int64Var(&timeout, "timeout", 300, "Timeout to perform release operations (install, upgrade, rollback, delete)")
 	pflag.StringVar(&clustersConfigPath, "clusters-config-path", "", "Configuration for clusters")
-	pflag.StringVar(&additionalClustersConfigPath, "additional-clusters-config-path", "", "Configuration for clusters")
 	pflag.StringVar(&pinnipedProxyURL, "pinniped-proxy-url", "http://kubeapps-internal-pinniped-proxy.kubeapps:3333", "internal url to be used for requests to clusters configured for credential proxying via pinniped")
 }
 
@@ -66,10 +64,6 @@ func main() {
 
 	// If there is no clusters config, we default to the previous behaviour of a "default" cluster.
 	clustersConfig := kube.ClustersConfig{KubeappsClusterName: "default"}
-	// TODO(absoludity): remove support for --additional-clusters-config-path once we're +2 releases away.
-	if clustersConfigPath == "" && additionalClustersConfigPath != "" {
-		clustersConfigPath = additionalClustersConfigPath
-	}
 	if clustersConfigPath != "" {
 		var err error
 		var cleanupCAFiles func()
@@ -107,13 +101,6 @@ func main() {
 	// Routes
 	// Auth not necessary here with Helm 3 because it's done by Kubernetes.
 	addRoute := handler.AddRouteWith(r.PathPrefix("/v1").Subrouter(), withHandlerConfig)
-	// Deprecate non-cluster-aware URIs.
-	addRoute("GET", "/releases", handler.ListAllReleases)
-	addRoute("GET", "/namespaces/{namespace}/releases", handler.ListReleases)
-	addRoute("POST", "/namespaces/{namespace}/releases", handler.CreateRelease)
-	addRoute("GET", "/namespaces/{namespace}/releases/{releaseName}", handler.GetRelease)
-	addRoute("PUT", "/namespaces/{namespace}/releases/{releaseName}", handler.OperateRelease)
-	addRoute("DELETE", "/namespaces/{namespace}/releases/{releaseName}", handler.DeleteRelease)
 	addRoute("GET", "/clusters/{cluster}/releases", handler.ListAllReleases)
 	addRoute("GET", "/clusters/{cluster}/namespaces/{namespace}/releases", handler.ListReleases)
 	addRoute("POST", "/clusters/{cluster}/namespaces/{namespace}/releases", handler.CreateRelease)

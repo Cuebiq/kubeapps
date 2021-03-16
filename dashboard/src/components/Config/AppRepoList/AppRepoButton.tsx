@@ -39,10 +39,13 @@ export function AppRepoAddButton({
   const onSubmit = (
     name: string,
     url: string,
+    type: string,
     authHeader: string,
     customCA: string,
     syncJobPodTemplate: string,
     registrySecrets: string[],
+    ociRepositories: string[],
+    skipTLS: boolean,
   ) => {
     if (repo) {
       return dispatch(
@@ -50,10 +53,13 @@ export function AppRepoAddButton({
           name,
           namespace,
           url,
+          type,
           authHeader,
           customCA,
           syncJobPodTemplate,
           registrySecrets,
+          ociRepositories,
+          skipTLS,
         ),
       );
     } else {
@@ -62,10 +68,13 @@ export function AppRepoAddButton({
           name,
           namespace,
           url,
+          type,
           authHeader,
           customCA,
           syncJobPodTemplate,
           registrySecrets,
+          ociRepositories,
+          skipTLS,
         ),
       );
     }

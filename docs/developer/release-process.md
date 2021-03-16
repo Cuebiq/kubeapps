@@ -9,8 +9,8 @@ The [values.yaml](../../chart/kubeapps/values.yaml) uses the following Bitnami i
 * [bitnami/nginx](https://hub.docker.com/r/bitnami/nginx/tags)
 * [bitnami/kubectl](https://hub.docker.com/r/bitnami/kubectl/tags)
 * [bitnami/oauth2-proxy](https://hub.docker.com/r/bitnami/oauth2-proxy/tags)
-
-while the [dashboard/Dockerfile](../../dashboard/Dockerfile) uses bitnami/nginx and [bitnami/node](https://hub.docker.com/r/bitnami/node/tags) also (though the latter is a rolling tag since it's a build-only image).
+* the [dashboard/Dockerfile](../../dashboard/Dockerfile) uses bitnami/nginx and [bitnami/node](https://hub.docker.com/r/bitnami/node/tags) also (though the latter is a rolling tag since it's a build-only image).
+* the [pinniped-proxy/Dockerfile](../../cmd/pinniped-proxy/Dockerfile) uses the [bitnami/minideb](https://hub.docker.com/r/bitnami/minideb/tags) image.
 
 All tags for these images should be updated to their latest compatible versions and security patches.
 
@@ -28,7 +28,7 @@ helm dependency update ./chart/kubeapps
 
 to update the requirements.lock file.
 
-Lastly, running
+Next, run
 
 ```bash
 yarn upgrade
@@ -36,9 +36,11 @@ yarn upgrade
 
 in the dashboard directory will update the frontend packages to the latest compatible versions.
 
+Finally, look at the [pull requests](https://github.com/kubeapps/kubeapps/pulls) and ensure there is no PR open by Snyk fixing a security issue.  If so, discuss it with a peer and come to a decision on it, trying not to release with a high/medium severity issue.
+
 ## 1 - Create a new git tag
 
-The first step is to tag the repository master branch tip and push it upstream. It is important to note that the tag name will be used as release name.
+The first step is to tag the repository master branch tip and push it upstream. It is important to note that the tag name will be used as the release name.
 
 ```bash
 export VERSION_NAME="v1.0.0-beta.1"
@@ -48,7 +50,7 @@ git push origin ${VERSION_NAME}
 ```
 
 This will trigger a build, test and **release** [workflow in our CI](https://circleci.com/gh/kubeapps/workflows).
- 
+
 ## 2 - Complete the GitHub release notes
 
 Once the release job is finished, you will have a GitHub release draft pre-populated. You still must **add a high level description with the release highlights**. Save the draft and **do not publish it yet**.

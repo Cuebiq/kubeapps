@@ -58,9 +58,21 @@ func (c *clientWithDefaultHeaders) Do(req *http.Request) (*http.Response, error)
 	return c.client.Do(req)
 }
 
-// InitNetClient returns an HTTP client based on the chart details loading a
-// custom CA if provided (as a secret)
-func InitNetClient(appRepo *v1alpha1.AppRepository, caCertSecret, authSecret *corev1.Secret, defaultHeaders http.Header) (HTTPClient, error) {
+// GetData retrieves the given key from the secret as a string
+func GetData(key string, s *corev1.Secret) (string, error) {
+	auth, ok := s.StringData[key]
+	if !ok {
+		authBytes, ok := s.Data[key]
+		if !ok {
+			return "", fmt.Errorf("secret %q did not contain key %q", s.Name, key)
+		}
+		auth = string(authBytes)
+	}
+	return auth, nil
+}
+
+// InitHTTPClient returns a HTTP client using the configuration from the apprepo and CA secret given.
+func InitHTTPClient(appRepo *v1alpha1.AppRepository, caCertSecret *corev1.Secret) (*http.Client, error) {
 	// Require the SystemCertPool unless the env var is explicitly set.
 	caCertPool, err := x509.SystemCertPool()
 	if err != nil {
@@ -85,36 +97,42 @@ func InitNetClient(appRepo *v1alpha1.AppRepository, caCertSecret, authSecret *co
 			return nil, fmt.Errorf("Failed to append %s to RootCAs", appRepo.Spec.Auth.CustomCA.SecretKeyRef.Name)
 		}
 	}
+	proxyConfig := getProxyConfig(appRepo)
+	proxyFunc := func(r *http.Request) (*url.URL, error) { return proxyConfig.ProxyFunc()(r.URL) }
+
+	return &http.Client{
+		Timeout: time.Second * defaultTimeoutSeconds,
+		Transport: &http.Transport{
+			Proxy: proxyFunc,
+			TLSClientConfig: &tls.Config{
+				RootCAs:            caCertPool,
+				InsecureSkipVerify: appRepo.Spec.TLSInsecureSkipVerify,
+			},
+		},
+	}, nil
+}
+
+// InitNetClient returns an HTTP client based on the chart details loading a
+// custom CA if provided (as a secret)
+func InitNetClient(appRepo *v1alpha1.AppRepository, caCertSecret, authSecret *corev1.Secret, defaultHeaders http.Header) (HTTPClient, error) {
+	netClient, err := InitHTTPClient(appRepo, caCertSecret)
+	if err != nil {
+		return nil, err
+	}
 
 	if defaultHeaders == nil {
 		defaultHeaders = http.Header{}
 	}
 	if authSecret != nil && appRepo.Spec.Auth.Header != nil {
-		key := appRepo.Spec.Auth.Header.SecretKeyRef.Key
-		auth, ok := authSecret.StringData[key]
-		if !ok {
-			authBytes, ok := authSecret.Data[key]
-			if !ok {
-				return nil, fmt.Errorf("secret %q did not contain key %q", appRepo.Spec.Auth.Header.SecretKeyRef.Name, key)
-			}
-			auth = string(authBytes)
+		auth, err := GetData(appRepo.Spec.Auth.Header.SecretKeyRef.Key, authSecret)
+		if err != nil {
+			return nil, err
 		}
 		defaultHeaders.Set("Authorization", string(auth))
 	}
 
-	proxyConfig := getProxyConfig(appRepo)
-	proxyFunc := func(r *http.Request) (*url.URL, error) { return proxyConfig.ProxyFunc()(r.URL) }
-
 	return &clientWithDefaultHeaders{
-		client: &http.Client{
-			Timeout: time.Second * defaultTimeoutSeconds,
-			Transport: &http.Transport{
-				Proxy: proxyFunc,
-				TLSClientConfig: &tls.Config{
-					RootCAs: caCertPool,
-				},
-			},
-		},
+		client:         netClient,
 		defaultHeaders: defaultHeaders,
 	}, nil
 }

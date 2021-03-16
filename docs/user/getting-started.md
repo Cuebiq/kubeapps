@@ -4,7 +4,7 @@ This guide will walk you through the process of deploying Kubeapps for your clus
 
 ## Prerequisites
 
-Kubeapps assumes a working Kubernetes cluster (v1.15+), as well as the [`helm`](https://helm.sh/docs/intro/install/) (3.0.2+) and [`kubectl`](https://kubernetes.io/docs/tasks/tools/install-kubectl/) command-line interfaces installed and configured to talk to your Kubernetes cluster. Kubeapps has been tested with Azure Kubernetes Service (AKS), Google Kubernetes Engine (GKE), `minikube` and Docker for Desktop Kubernetes. Kubeapps works on RBAC-enabled clusters and this configuration is encouraged for a more secure install.
+Kubeapps assumes a working Kubernetes cluster (v1.15+), as well as the [`helm`](https://helm.sh/docs/intro/install/) (3.1.0+) and [`kubectl`](https://kubernetes.io/docs/tasks/tools/install-kubectl/) command-line interfaces installed and configured to talk to your Kubernetes cluster. Kubeapps has been tested with Azure Kubernetes Service (AKS), Google Kubernetes Engine (GKE), `minikube` and Docker for Desktop Kubernetes. Kubeapps works on RBAC-enabled clusters and this configuration is encouraged for a more secure install.
 
 > On GKE, you must either be an "Owner" or have the "Container Engine Admin" role in order to install Kubeapps.
 
@@ -27,7 +27,7 @@ The above commands will deploy Kubeapps into the `kubeapps` namespace in your cl
 For any user-facing installation you should [configure an OAuth2/OIDC provider](./using-an-OIDC-provider.md) to enable secure user authentication with Kubeapps and the cluster, but this is quite an overhead to simply try out Kubeapps. Instead, for a simpler way to try out Kubeapps for personal learning, we can create a Kubernetes service account and use that API token to authenticate with the Kubernetes API server via Kubeapps:
 
 ```bash
-kubectl create serviceaccount kubeapps-operator
+kubectl create --namespace default serviceaccount kubeapps-operator
 kubectl create clusterrolebinding kubeapps-operator --clusterrole=cluster-admin --serviceaccount=default:kubeapps-operator
 ```
 

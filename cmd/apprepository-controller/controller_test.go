@@ -14,6 +14,8 @@ import (
 
 const repoSyncImage = "bitnami/kubeapps-asset-syncer:2.0.0-scratch-r2"
 
+var defaultTTL = int32(3600)
+
 func Test_newCronJob(t *testing.T) {
 	tests := []struct {
 		name             string
@@ -66,6 +68,7 @@ func Test_newCronJob(t *testing.T) {
 					ConcurrencyPolicy: "Replace",
 					JobTemplate: batchv1beta1.JobTemplateSpec{
 						Spec: batchv1.JobSpec{
+							TTLSecondsAfterFinished: &defaultTTL,
 							Template: corev1.PodTemplateSpec{
 								ObjectMeta: metav1.ObjectMeta{
 									Labels: map[string]string{
@@ -158,6 +161,7 @@ func Test_newCronJob(t *testing.T) {
 					ConcurrencyPolicy: "Replace",
 					JobTemplate: batchv1beta1.JobTemplateSpec{
 						Spec: batchv1.JobSpec{
+							TTLSecondsAfterFinished: &defaultTTL,
 							Template: corev1.PodTemplateSpec{
 								ObjectMeta: metav1.ObjectMeta{
 									Labels: map[string]string{
@@ -247,6 +251,7 @@ func Test_newCronJob(t *testing.T) {
 					ConcurrencyPolicy: "Replace",
 					JobTemplate: batchv1beta1.JobTemplateSpec{
 						Spec: batchv1.JobSpec{
+							TTLSecondsAfterFinished: &defaultTTL,
 							Template: corev1.PodTemplateSpec{
 								ObjectMeta: metav1.ObjectMeta{
 									Labels: map[string]string{
@@ -356,6 +361,7 @@ func Test_newSyncJob(t *testing.T) {
 					},
 				},
 				Spec: batchv1.JobSpec{
+					TTLSecondsAfterFinished: &defaultTTL,
 					Template: corev1.PodTemplateSpec{
 						ObjectMeta: metav1.ObjectMeta{
 							Labels: map[string]string{
@@ -424,6 +430,7 @@ func Test_newSyncJob(t *testing.T) {
 					GenerateName: "apprepo-my-other-namespace-sync-my-charts-",
 				},
 				Spec: batchv1.JobSpec{
+					TTLSecondsAfterFinished: &defaultTTL,
 					Template: corev1.PodTemplateSpec{
 						ObjectMeta: metav1.ObjectMeta{
 							Labels: map[string]string{
@@ -506,6 +513,7 @@ func Test_newSyncJob(t *testing.T) {
 					},
 				},
 				Spec: batchv1.JobSpec{
+					TTLSecondsAfterFinished: &defaultTTL,
 					Template: corev1.PodTemplateSpec{
 						ObjectMeta: metav1.ObjectMeta{
 							Labels: map[string]string{
@@ -595,6 +603,7 @@ func Test_newSyncJob(t *testing.T) {
 					},
 				},
 				Spec: batchv1.JobSpec{
+					TTLSecondsAfterFinished: &defaultTTL,
 					Template: corev1.PodTemplateSpec{
 						ObjectMeta: metav1.ObjectMeta{
 							Labels: map[string]string{
@@ -695,6 +704,7 @@ func Test_newSyncJob(t *testing.T) {
 					},
 				},
 				Spec: batchv1.JobSpec{
+					TTLSecondsAfterFinished: &defaultTTL,
 					Template: corev1.PodTemplateSpec{
 						ObjectMeta: metav1.ObjectMeta{
 							Labels: map[string]string{
@@ -811,6 +821,7 @@ func Test_newSyncJob(t *testing.T) {
 					},
 				},
 				Spec: batchv1.JobSpec{
+					TTLSecondsAfterFinished: &defaultTTL,
 					Template: corev1.PodTemplateSpec{
 						ObjectMeta: metav1.ObjectMeta{
 							Labels: map[string]string{
@@ -893,6 +904,7 @@ func Test_newSyncJob(t *testing.T) {
 					},
 				},
 				Spec: batchv1.JobSpec{
+					TTLSecondsAfterFinished: &defaultTTL,
 					Template: corev1.PodTemplateSpec{
 						ObjectMeta: metav1.ObjectMeta{
 							Labels: map[string]string{
@@ -920,6 +932,90 @@ func Test_newSyncJob(t *testing.T) {
 										"",
 										"--oci-repositories",
 										"apache,jenkins",
+									},
+									Env: []corev1.EnvVar{
+										{
+											Name: "DB_PASSWORD",
+											ValueFrom: &corev1.EnvVarSource{
+												SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: "postgresql"}, Key: "postgresql-root-password"}},
+										},
+									},
+									VolumeMounts: nil,
+								},
+							},
+							Volumes: nil,
+						},
+					},
+				},
+			},
+		},
+		{
+			"Skip TLS verification",
+			"",
+			&apprepov1alpha1.AppRepository{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "AppRepository",
+					APIVersion: "kubeapps.com/v1alpha1",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-charts",
+					Namespace: "kubeapps",
+					Labels: map[string]string{
+						"name":       "my-charts",
+						"created-by": "kubeapps",
+					},
+				},
+				Spec: apprepov1alpha1.AppRepositorySpec{
+					Type:                  "oci",
+					URL:                   "https://charts.acme.com/my-charts",
+					OCIRepositories:       []string{"apache", "jenkins"},
+					TLSInsecureSkipVerify: true,
+				},
+			},
+			batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{
+					GenerateName: "apprepo-kubeapps-sync-my-charts-",
+					OwnerReferences: []metav1.OwnerReference{
+						*metav1.NewControllerRef(
+							&apprepov1alpha1.AppRepository{ObjectMeta: metav1.ObjectMeta{Name: "my-charts"}},
+							schema.GroupVersionKind{
+								Group:   apprepov1alpha1.SchemeGroupVersion.Group,
+								Version: apprepov1alpha1.SchemeGroupVersion.Version,
+								Kind:    "AppRepository",
+							},
+						),
+					},
+				},
+				Spec: batchv1.JobSpec{
+					TTLSecondsAfterFinished: &defaultTTL,
+					Template: corev1.PodTemplateSpec{
+						ObjectMeta: metav1.ObjectMeta{
+							Labels: map[string]string{
+								LabelRepoName:      "my-charts",
+								LabelRepoNamespace: "kubeapps",
+							},
+						},
+						Spec: corev1.PodSpec{
+							RestartPolicy: "OnFailure",
+							Containers: []corev1.Container{
+								{
+									Name:            "sync",
+									Image:           repoSyncImage,
+									ImagePullPolicy: "IfNotPresent",
+									Command:         []string{"/chart-repo"},
+									Args: []string{
+										"sync",
+										"--database-url=postgresql.kubeapps",
+										"--database-user=admin",
+										"--database-name=assets",
+										"--namespace=kubeapps",
+										"my-charts",
+										"https://charts.acme.com/my-charts",
+										"oci",
+										"",
+										"--oci-repositories",
+										"apache,jenkins",
+										"--tls-insecure-skip-verify",
 									},
 									Env: []corev1.EnvVar{
 										{
@@ -969,6 +1065,7 @@ func Test_newCleanupJob(t *testing.T) {
 					Namespace:    "kubeapps",
 				},
 				Spec: batchv1.JobSpec{
+					TTLSecondsAfterFinished: &defaultTTL,
 					Template: corev1.PodTemplateSpec{
 						Spec: corev1.PodSpec{
 							RestartPolicy: "Never",
@@ -1085,5 +1182,6 @@ func makeDefaultConfig() Config {
 		DBSecretName:             "postgresql",
 		DBSecretKey:              "postgresql-root-password",
 		UserAgentComment:         "",
+		TTLSecondsAfterFinished:  "3600",
 		Crontab:                  "*/10 * * * *"}
 }
