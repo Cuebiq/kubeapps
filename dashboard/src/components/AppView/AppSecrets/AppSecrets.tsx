@@ -1,5 +1,4 @@
 import { isEmpty } from "lodash";
-import React from "react";
 import { useSelector } from "react-redux";
 import { ISecret, IStoreState } from "shared/types";
 
@@ -41,7 +40,7 @@ function AppSecrets({ secretRefs }: IResourceTableProps) {
     });
   }
   return (
-    <section aria-labelledby="app-secrets" className="app-secrets-section">
+    <section aria-labelledby="app-secrets">
       <h5 className="section-title" id="app-secrets">
         Application Secrets
       </h5>

@@ -1,8 +1,7 @@
-import { CdsButton } from "@clr/react/button";
+import { CdsButton } from "@cds/react/button";
+import { CdsModal } from "@cds/react/modal";
 import actions from "actions";
 import Alert from "components/js/Alert";
-import Modal from "components/js/Modal/Modal";
-import * as React from "react";
 import { act } from "react-dom/test-utils";
 import * as ReactRedux from "react-redux";
 import { defaultStore, getStore, mountWrapper } from "shared/specs/mountWrapper";
@@ -40,7 +39,7 @@ it("rolls back an application", async () => {
     (wrapper.find(CdsButton).prop("onClick") as any)();
   });
   wrapper.update();
-  expect(wrapper.find(Modal).prop("showModal")).toBe(true);
+  expect(wrapper.find(CdsModal)).toExist();
   await act(async () => {
     await (wrapper
       .find(CdsButton)

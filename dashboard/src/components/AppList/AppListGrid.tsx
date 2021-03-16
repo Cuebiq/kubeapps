@@ -1,5 +1,4 @@
 import Row from "components/js/Row";
-import * as React from "react";
 import { Link } from "react-router-dom";
 import { IAppOverview, IClusterServiceVersion, IResource } from "../../shared/types";
 import * as url from "../../shared/url";
@@ -56,7 +55,7 @@ function AppListGrid(props: IAppListProps) {
         })}
         {filteredCRs.map(r => {
           const csv = props.csvs.find(c =>
-            c.spec.customresourcedefinitions.owned.some(crd => crd.kind === r.kind),
+            c.spec.customresourcedefinitions.owned?.some(crd => crd.kind === r.kind),
           );
           return (
             <CustomResourceListItem

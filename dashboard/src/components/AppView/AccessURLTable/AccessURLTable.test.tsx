@@ -1,5 +1,5 @@
 import context from "jest-plugin-context";
-import * as React from "react";
+
 import * as ReactRedux from "react-redux";
 
 import actions from "actions";
@@ -176,7 +176,6 @@ context("when the app contains ingresses", () => {
     );
     expect(wrapper.find("Table")).toExist();
     expect(wrapper.find("a").findWhere(a => a.prop("href") === "http://foo.bar/ready")).toExist();
-    expect(wrapper).toMatchSnapshot();
   });
 
   it("should show the table with available ingresses without anchors if a regex is present in the path", () => {
@@ -271,7 +270,6 @@ context("when the app contains services and ingresses", () => {
     );
     expect(wrapper.find("a").findWhere(a => a.prop("href") === "http://1.2.3.4:8080")).toExist();
     expect(wrapper.find("a").findWhere(a => a.prop("href") === "http://foo.bar/ready")).toExist();
-    expect(wrapper).toMatchSnapshot();
   });
 });
 
@@ -297,7 +295,5 @@ context("when the app contains resources with errors", () => {
     // or not. The Service error will be shown in the Services table anyway.
     expect(wrapper.find("a")).not.toExist();
     expect(wrapper.find("table").text()).toContain("could not find Ingress");
-
-    expect(wrapper).toMatchSnapshot();
   });
 });

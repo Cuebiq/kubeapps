@@ -333,7 +333,7 @@ export interface IClusterServiceVersionCRD {
 export interface IClusterServiceVersionSpec {
   apiservicedefinitions: any;
   customresourcedefinitions: {
-    owned: IClusterServiceVersionCRD[];
+    owned?: IClusterServiceVersionCRD[];
   };
   description: string;
   displayName: string;
@@ -368,6 +368,11 @@ export interface IClusterServiceVersionSpec {
 
 export interface IClusterServiceVersion extends IResource {
   spec: IClusterServiceVersionSpec;
+}
+
+export interface IAppRepositoryFilter {
+  jq: string;
+  variables?: { [key: string]: string };
 }
 
 export interface IAppState {
@@ -454,6 +459,8 @@ export interface IAppRepository
       syncJobPodTemplate?: object;
       dockerRegistrySecrets?: string[];
       ociRepositories?: string[];
+      tlsInsecureSkipVerify?: boolean;
+      filterRule?: IAppRepositoryFilter;
     },
     undefined
   > {}

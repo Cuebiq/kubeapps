@@ -1,7 +1,6 @@
-import { CdsButton } from "@clr/react/button";
+import { CdsButton } from "@cds/react/button";
 import actions from "actions";
 import Alert from "components/js/Alert";
-import * as React from "react";
 import { act } from "react-dom/test-utils";
 import * as ReactRedux from "react-redux";
 import { defaultStore, getStore, mountWrapper } from "shared/specs/mountWrapper";
@@ -20,7 +19,7 @@ const kubeaActions = { ...actions.kube };
 beforeEach(() => {
   actions.repos = {
     ...actions.repos,
-    validateRepo: jest.fn(),
+    validateRepo: jest.fn().mockReturnValue(true),
   };
   const mockDispatch = jest.fn(r => r);
   spyOnUseDispatch = jest.spyOn(ReactRedux, "useDispatch").mockReturnValue(mockDispatch);
@@ -135,7 +134,139 @@ it("should call the install method with OCI information", async () => {
     "",
     [],
     ["apache", "jenkins"],
+    false,
+    undefined,
   );
+});
+
+it("should call the install skipping TLS verification", async () => {
+  const validateRepo = jest.fn().mockReturnValue(true);
+  const install = jest.fn().mockReturnValue(true);
+  actions.repos = {
+    ...actions.repos,
+    validateRepo,
+  };
+  const wrapper = mountWrapper(defaultStore, <AppRepoForm {...defaultProps} onSubmit={install} />);
+  wrapper.find("#kubeapps-repo-url").simulate("change", { target: { value: "helm.repo" } });
+  wrapper.find("#kubeapps-repo-skip-tls").simulate("change");
+  const form = wrapper.find("form");
+  await act(async () => {
+    await (form.prop("onSubmit") as (e: any) => Promise<any>)({ preventDefault: jest.fn() });
+  });
+  wrapper.update();
+  expect(install).toHaveBeenCalledWith(
+    "",
+    "https://helm.repo",
+    "helm",
+    "",
+    "",
+    "",
+    [],
+    [],
+    true,
+    undefined,
+  );
+});
+
+describe("when using a filter", () => {
+  it("should call the install method with a filter", async () => {
+    const install = jest.fn().mockReturnValue(true);
+    const wrapper = mountWrapper(
+      defaultStore,
+      <AppRepoForm {...defaultProps} onSubmit={install} />,
+    );
+    wrapper
+      .find("#kubeapps-repo-url")
+      .simulate("change", { target: { value: "https://helm.repo" } });
+    wrapper
+      .find("textarea")
+      .at(0)
+      .simulate("change", { target: { value: "nginx, wordpress" } });
+    const form = wrapper.find("form");
+    await act(async () => {
+      await (form.prop("onSubmit") as (e: any) => Promise<any>)({ preventDefault: jest.fn() });
+    });
+    wrapper.update();
+    expect(install).toHaveBeenCalledWith(
+      "",
+      "https://helm.repo",
+      "helm",
+      "",
+      "",
+      "",
+      [],
+      [],
+      false,
+      { jq: ".name == $var0 or .name == $var1", variables: { $var0: "nginx", $var1: "wordpress" } },
+    );
+  });
+
+  it("should call the install method with a filter excluding a regex", async () => {
+    const install = jest.fn().mockReturnValue(true);
+    const wrapper = mountWrapper(
+      defaultStore,
+      <AppRepoForm {...defaultProps} onSubmit={install} />,
+    );
+    wrapper
+      .find("#kubeapps-repo-url")
+      .simulate("change", { target: { value: "https://helm.repo" } });
+    wrapper
+      .find("textarea")
+      .at(0)
+      .simulate("change", { target: { value: "nginx" } });
+    wrapper.find('input[type="checkbox"]').at(0).simulate("change");
+    wrapper.find('input[type="checkbox"]').at(1).simulate("change");
+    const form = wrapper.find("form");
+    await act(async () => {
+      await (form.prop("onSubmit") as (e: any) => Promise<any>)({ preventDefault: jest.fn() });
+    });
+    wrapper.update();
+    expect(install).toHaveBeenCalledWith(
+      "",
+      "https://helm.repo",
+      "helm",
+      "",
+      "",
+      "",
+      [],
+      [],
+      false,
+      { jq: ".name | test($var) | not", variables: { $var: "nginx" } },
+    );
+  });
+
+  it("ignore the filter for the OCI case", async () => {
+    const install = jest.fn().mockReturnValue(true);
+    const wrapper = mountWrapper(
+      defaultStore,
+      <AppRepoForm {...defaultProps} onSubmit={install} />,
+    );
+    wrapper
+      .find("#kubeapps-repo-url")
+      .simulate("change", { target: { value: "https://oci.repo" } });
+    wrapper
+      .find("textarea")
+      .at(0)
+      .simulate("change", { target: { value: "nginx, wordpress" } });
+    wrapper.find("#kubeapps-repo-type-oci").simulate("change");
+    const form = wrapper.find("form");
+    await act(async () => {
+      await (form.prop("onSubmit") as (e: any) => Promise<any>)({ preventDefault: jest.fn() });
+    });
+    wrapper.update();
+    expect(install).toHaveBeenCalledWith(
+      "",
+      "https://oci.repo",
+      "oci",
+      "",
+      "",
+      "",
+      [],
+      [],
+      false,
+      undefined,
+    );
+  });
 });
 
 it("should not show the docker registry credentials section if the namespace is the global one", () => {
@@ -183,24 +314,23 @@ it("should call the install method with the selected docker credentials", async 
       preventDefault: jest.fn(),
     });
   });
-  expect(install).toHaveBeenCalledWith("", "http://test", "helm", "", "", "", ["repo-1"], []);
-});
-
-it("should not show the custom CA field if using an OCI registry", () => {
-  const wrapper = mountWrapper(defaultStore, <AppRepoForm {...defaultProps} />);
-  wrapper.find("#kubeapps-repo-type-oci").simulate("change");
-  const section = wrapper
-    .find(".clr-form-control")
-    .filterWhere(c => c.text().includes("Custom CA Certificate"));
-  expect(section.prop("hidden")).toBeTruthy();
+  expect(install).toHaveBeenCalledWith(
+    "",
+    "http://test",
+    "helm",
+    "",
+    "",
+    "",
+    ["repo-1"],
+    [],
+    false,
+    undefined,
+  );
 });
 
 it("should not show the list of OCI repositories if using a Helm repo (default)", () => {
   const wrapper = mountWrapper(defaultStore, <AppRepoForm {...defaultProps} />);
-  const section = wrapper
-    .find(".clr-control-container")
-    .filterWhere(c => c.text().includes("List of Repositories"));
-  expect(section.prop("hidden")).toBeTruthy();
+  expect(wrapper.find("#kubeapps-oci-repositories")).not.toExist();
 });
 
 describe("when the repository info is already populated", () => {
@@ -260,6 +390,13 @@ describe("when the repository info is already populated", () => {
       const repo = { metadata: { name: "foo" }, spec: { type: "oci" } } as any;
       const wrapper = mountWrapper(defaultStore, <AppRepoForm {...defaultProps} repo={repo} />);
       expect(wrapper.find("#kubeapps-repo-type-oci")).toBeChecked();
+      expect(wrapper.find("#kubeapps-oci-repositories")).toExist();
+    });
+
+    it("should parse the existing skip tls config", () => {
+      const repo = { metadata: { name: "foo" }, spec: { tlsInsecureSkipVerify: true } } as any;
+      const wrapper = mountWrapper(defaultStore, <AppRepoForm {...defaultProps} repo={repo} />);
+      expect(wrapper.find("#kubeapps-repo-skip-tls")).toBeChecked();
     });
 
     it("should parse a bearer token", () => {
@@ -286,6 +423,38 @@ describe("when the repository info is already populated", () => {
         <AppRepoForm {...defaultProps} repo={repo} />,
       );
       expect(wrapper.find("#app-repo-secret-foo").prop("checked")).toBe(true);
+    });
+
+    it("should parse the existing filter (simple)", () => {
+      const repo = {
+        metadata: { name: "foo" },
+        spec: {
+          type: "helm",
+          filterRule: {
+            jq: ".name == $var0 or .name == $var1",
+            variables: { $var0: "nginx", $var1: "wordpress" },
+          },
+        },
+      } as any;
+      const wrapper = mountWrapper(defaultStore, <AppRepoForm {...defaultProps} repo={repo} />);
+      expect(wrapper.find("textarea").at(0).prop("value")).toBe("nginx, wordpress");
+
+      expect(wrapper.find('input[type="checkbox"]').at(0)).not.toBeChecked();
+      expect(wrapper.find('input[type="checkbox"]').at(1)).not.toBeChecked();
+    });
+    it("should parse the existing filter (negated regex)", () => {
+      const repo = {
+        metadata: { name: "foo" },
+        spec: {
+          type: "helm",
+          filterRule: { jq: ".name | test($var) | not", variables: { $var: "nginx" } },
+        },
+      } as any;
+      const wrapper = mountWrapper(defaultStore, <AppRepoForm {...defaultProps} repo={repo} />);
+      expect(wrapper.find("textarea").at(0).prop("value")).toBe("nginx");
+
+      expect(wrapper.find('input[type="checkbox"]').at(0)).toBeChecked();
+      expect(wrapper.find('input[type="checkbox"]').at(1)).toBeChecked();
     });
   });
 });

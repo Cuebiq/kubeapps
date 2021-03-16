@@ -1,5 +1,5 @@
-import { CdsButton } from "@clr/react/button";
-import { CdsIcon } from "@clr/react/icon";
+import { CdsButton } from "@cds/react/button";
+import { CdsIcon } from "@cds/react/icon";
 import actions from "actions";
 import { filtersToQuery } from "components/Catalog/Catalog";
 import FilterGroup from "components/FilterGroup/FilterGroup";
@@ -9,7 +9,7 @@ import Row from "components/js/Row";
 import { push } from "connected-react-router";
 import { flatten, get, intersection, uniq, without } from "lodash";
 import { ParsedQs } from "qs";
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { app } from "shared/url";
 import { IPackageManifest, IPackageManifestStatus, IStoreState } from "../../shared/types";

@@ -2,7 +2,6 @@ import actions from "actions";
 import Alert from "components/js/Alert";
 import Table from "components/js/Table";
 import PageHeader from "components/PageHeader/PageHeader";
-import * as React from "react";
 import { act } from "react-dom/test-utils";
 import * as ReactRedux from "react-redux";
 import { Link } from "react-router-dom";
@@ -248,12 +247,7 @@ describe("global and namespaced repositories", () => {
       }),
       <AppRepoList />,
     );
-    expect(
-      wrapper
-        .find(Table)
-        .find(Link)
-        .prop("to"),
-    ).toEqual(
+    expect(wrapper.find(Table).find(Link).prop("to")).toEqual(
       `/c/${currentCluster}/ns/${namespacedRepo.metadata.namespace}/catalog?Repository=my-repo`,
     );
   });
@@ -270,12 +264,7 @@ describe("global and namespaced repositories", () => {
     act(() => {
       wrapper.find("input[type='checkbox']").simulate("change");
     });
-    expect(
-      wrapper
-        .find(Table)
-        .find(Link)
-        .prop("to"),
-    ).toEqual(
+    expect(wrapper.find(Table).find(Link).prop("to")).toEqual(
       `/c/${currentCluster}/ns/${namespacedRepo.metadata.namespace}/catalog?Repository=my-repo`,
     );
   });

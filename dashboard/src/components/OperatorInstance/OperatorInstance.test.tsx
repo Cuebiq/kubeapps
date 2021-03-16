@@ -1,4 +1,4 @@
-import { CdsButton } from "@clr/react/button";
+import { CdsButton } from "@cds/react/button";
 import actions from "actions";
 import AccessURLTable from "components/AppView/AccessURLTable/AccessURLTable";
 import AppNotes from "components/AppView/AppNotes";
@@ -10,7 +10,6 @@ import Alert from "components/js/Alert";
 import LoadingWrapper from "components/LoadingWrapper/LoadingWrapper";
 import OperatorHeader from "components/OperatorView/OperatorHeader";
 import ApplicationStatusContainer from "containers/ApplicationStatusContainer";
-import * as React from "react";
 import { act } from "react-dom/test-utils";
 import * as ReactRedux from "react-redux";
 import { defaultStore, getStore, initialState, mountWrapper } from "shared/specs/mountWrapper";

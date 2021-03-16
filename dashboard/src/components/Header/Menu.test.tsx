@@ -1,16 +1,11 @@
-import { mount } from "enzyme";
-import * as React from "react";
-import { Provider } from "react-redux";
-import configureMockStore from "redux-mock-store";
-import thunk from "redux-thunk";
-
-import { CdsButton } from "@clr/react/button";
-import { BrowserRouter, Link } from "react-router-dom";
+import { CdsButton } from "@cds/react/button";
+import actions from "actions";
+import * as ReactRedux from "react-redux";
+import { Link } from "react-router-dom";
 import { IClustersState } from "reducers/cluster";
+import { SupportedThemes } from "shared/Config";
+import { defaultStore, getStore, mountWrapper } from "shared/specs/mountWrapper";
 import Menu from "./Menu";
-
-const mockStore = configureMockStore([thunk]);
-const defaultStore = mockStore({});
 
 const defaultProps = {
   clusters: {
@@ -28,14 +23,20 @@ const defaultProps = {
   logout: jest.fn(),
 };
 
+let spyOnUseDispatch: jest.SpyInstance;
+beforeEach(() => {
+  const mockDispatch = jest.fn(res => res);
+  spyOnUseDispatch = jest.spyOn(ReactRedux, "useDispatch").mockReturnValue(mockDispatch);
+});
+
+const defaultActions = { ...actions.config };
+afterEach(() => {
+  spyOnUseDispatch.mockRestore();
+  actions.config = defaultActions;
+});
+
 it("opens the dropdown menu", () => {
-  const wrapper = mount(
-    <Provider store={defaultStore}>
-      <BrowserRouter>
-        <Menu {...defaultProps} />
-      </BrowserRouter>
-    </Provider>,
-  );
+  const wrapper = mountWrapper(defaultStore, <Menu {...defaultProps} />);
   expect(wrapper.find(".dropdown")).not.toHaveClassName("open");
   const menu = wrapper.find("button");
   menu.simulate("click");
@@ -47,15 +48,34 @@ it("opens the dropdown menu", () => {
 
 it("logs out", () => {
   const logout = jest.fn();
-  const wrapper = mount(
-    <Provider store={defaultStore}>
-      <BrowserRouter>
-        <Menu {...defaultProps} logout={logout} />
-      </BrowserRouter>
-    </Provider>,
-  );
+  const wrapper = mountWrapper(defaultStore, <Menu {...defaultProps} logout={logout} />);
   const logoutButton = wrapper.find(CdsButton);
   // Simulate doesn't work with CdsButtons
   (logoutButton.prop("onClick") as any)();
   expect(logout).toHaveBeenCalled();
+});
+
+describe("theme switcher toggle", () => {
+  it("toggle not checked by default", () => {
+    const wrapper = mountWrapper(defaultStore, <Menu {...defaultProps} />);
+    const toggle = wrapper.find("cds-toggle input");
+    expect(toggle.prop("checked")).toBe(false);
+  });
+
+  it("toggle checked if dark theme is configured", () => {
+    const wrapper = mountWrapper(
+      getStore({ config: { theme: SupportedThemes.dark } }),
+      <Menu {...defaultProps} />,
+    );
+    const toggle = wrapper.find("cds-toggle input");
+    expect(toggle.prop("checked")).toBe(true);
+  });
+
+  it("calls setTheme with the new theme", () => {
+    actions.config.setTheme = jest.fn();
+    const wrapper = mountWrapper(defaultStore, <Menu {...defaultProps} />);
+    const toggle = wrapper.find("cds-toggle input");
+    toggle.simulate("change");
+    expect(actions.config.setTheme).toHaveBeenCalled();
+  });
 });

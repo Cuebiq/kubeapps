@@ -1,6 +1,6 @@
 import { axiosWithAuth } from "./AxiosInstance";
 import { APIBase } from "./Kube";
-import { ICreateAppRepositoryResponse } from "./types";
+import { IAppRepositoryFilter, ICreateAppRepositoryResponse } from "./types";
 import * as url from "./url";
 
 export class AppRepository {
@@ -35,6 +35,8 @@ export class AppRepository {
     syncJobPodTemplate: any,
     registrySecrets: string[],
     ociRepositories: string[],
+    skipTLS: boolean,
+    filter?: IAppRepositoryFilter,
   ) {
     const { data } = await axiosWithAuth.put<ICreateAppRepositoryResponse>(
       url.backend.apprepositories.update(cluster, namespace, name),
@@ -48,6 +50,8 @@ export class AppRepository {
           syncJobPodTemplate,
           registrySecrets,
           ociRepositories,
+          tlsInsecureSkipVerify: skipTLS,
+          filter,
         },
       },
     );
@@ -75,6 +79,8 @@ export class AppRepository {
     syncJobPodTemplate: any,
     registrySecrets: string[],
     ociRepositories: string[],
+    skipTLS: boolean,
+    filter?: IAppRepositoryFilter,
   ) {
     const { data } = await axiosWithAuth.post<ICreateAppRepositoryResponse>(
       url.backend.apprepositories.create(cluster, namespace),
@@ -88,6 +94,8 @@ export class AppRepository {
           syncJobPodTemplate,
           registrySecrets,
           ociRepositories,
+          tlsInsecureSkipVerify: skipTLS,
+          filterRule: filter,
         },
       },
     );
@@ -101,9 +109,17 @@ export class AppRepository {
     authHeader: string,
     customCA: string,
     ociRepositories: string[],
+    skipTLS: boolean,
   ) {
     const { data } = await axiosWithAuth.post<any>(url.backend.apprepositories.validate(cluster), {
-      appRepository: { repoURL, type, authHeader, customCA, ociRepositories },
+      appRepository: {
+        repoURL,
+        type,
+        authHeader,
+        customCA,
+        ociRepositories,
+        tlsInsecureSkipVerify: skipTLS,
+      },
     });
     return data;
   }

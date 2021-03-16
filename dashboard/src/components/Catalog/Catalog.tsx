@@ -1,5 +1,6 @@
-import { CdsButton } from "@clr/react/button";
-import { CdsIcon } from "@clr/react/icon";
+import { CdsButton } from "@cds/react/button";
+import { CdsIcon } from "@cds/react/icon";
+import actions from "actions";
 import FilterGroup from "components/FilterGroup/FilterGroup";
 import Alert from "components/js/Alert";
 import Column from "components/js/Column";
@@ -7,7 +8,7 @@ import Row from "components/js/Row";
 import { push } from "connected-react-router";
 import { flatten, get, intersection, isEqual, trimStart, uniq, without } from "lodash";
 import { ParsedQs } from "qs";
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { Link } from "react-router-dom";
 import { app } from "shared/url";
@@ -115,8 +116,8 @@ function Catalog(props: ICatalogProps) {
   } = useSelector((state: IStoreState) => state);
 
   const dispatch = useDispatch();
-  const [filters, setFilters] = useState(initialFilterState());
-  const [page, setPage] = useState(1);
+  const [filters, setFilters] = React.useState(initialFilterState());
+  const [page, setPage] = React.useState(1);
 
   useEffect(() => {
     const newFilters = {};
@@ -139,8 +140,8 @@ function Catalog(props: ICatalogProps) {
 
   // hasLoadedFirstPage is used to not bump the current page until the first page is fully
   // requested first
-  const [hasRequestedFirstPage, setHasRequestedFirstPage] = useState(false);
-  const [hasLoadedFirstPage, setHasLoadedFirstPage] = useState(false);
+  const [hasRequestedFirstPage, setHasRequestedFirstPage] = React.useState(false);
+  const [hasLoadedFirstPage, setHasLoadedFirstPage] = React.useState(false);
   useEffect(() => {
     if (isFetching) {
       setHasRequestedFirstPage(true);
@@ -240,7 +241,7 @@ function Catalog(props: ICatalogProps) {
       const regex = new RegExp(escapeRegExp(searchFilter), "i");
       return (
         regex.test(c.metadata.name) ||
-        c?.spec?.customresourcedefinitions?.owned.find(crd => regex.test(crd.displayName))
+        c?.spec?.customresourcedefinitions?.owned?.find(crd => regex.test(crd.displayName))
       );
     })
     .filter(
@@ -256,8 +257,20 @@ function Catalog(props: ICatalogProps) {
 
   // Required to have the latest value of page
   const setPageWithContext = () => {
+    if (!error) {
+      increaseRequestedPage();
+    }
+  };
+
+  const forceRetry = () => {
+    dispatch(actions.charts.clearErrorChart());
+    fetchCharts(cluster, namespace, reposFilter, page, size, searchFilter);
+  };
+
+  const increaseRequestedPage = () => {
     setPage(page + 1);
   };
+
   const observeBorder = (node: any) => {
     // Check if the IntersectionAPI is enabled
     if ("IntersectionObserver" in window && "IntersectionObserverEntry" in window) {
@@ -305,7 +318,15 @@ function Catalog(props: ICatalogProps) {
         }
       />
       {error && (
-        <Alert theme="danger">An error occurred while fetching the catalog: {error.message}</Alert>
+        <Alert theme="danger">
+          An error occurred while fetching the catalog: {error.message}.{" "}
+          {!hasFinishedFetching && (
+            <CdsButton size="sm" action="flat" onClick={forceRetry} type="button">
+              {" "}
+              Try again{" "}
+            </CdsButton>
+          )}
+        </Alert>
       )}
       {isEqual(filters, initialFilterState()) &&
       hasFinishedFetching &&
@@ -426,6 +447,12 @@ function Catalog(props: ICatalogProps) {
                         filters[filterNames.TYPE].find((type: string) => type === "Charts")) && (
                         <div className="endPageMessage">
                           <LoadingWrapper medium={true} loaded={false} />
+                          {error && !hasFinishedFetching && (
+                            <CdsButton size="sm" action="flat" onClick={forceRetry} type="button">
+                              {" "}
+                              Try again{" "}
+                            </CdsButton>
+                          )}
                         </div>
                       )}
                     {!hasFinishedFetching && !isFetching && (

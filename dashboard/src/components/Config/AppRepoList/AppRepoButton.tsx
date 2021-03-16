@@ -1,14 +1,13 @@
-import React, { useState } from "react";
+import { useState } from "react";
 
-import { CdsButton } from "@clr/react/button";
-import { CdsIcon } from "@clr/react/icon";
+import { CdsButton } from "@cds/react/button";
+import { CdsIcon } from "@cds/react/icon";
+import { CdsModal, CdsModalContent, CdsModalHeader } from "@cds/react/modal";
 import actions from "actions";
-import Modal from "components/js/Modal/Modal";
 import { useDispatch } from "react-redux";
 import { Action } from "redux";
 import { ThunkDispatch } from "redux-thunk";
-import { IAppRepository, ISecret, IStoreState } from "../../../shared/types";
-import "./AppRepoButton.css";
+import { IAppRepository, IAppRepositoryFilter, ISecret, IStoreState } from "../../../shared/types";
 import { AppRepoForm } from "./AppRepoForm";
 
 interface IAppRepoAddButtonProps {
@@ -45,6 +44,8 @@ export function AppRepoAddButton({
     syncJobPodTemplate: string,
     registrySecrets: string[],
     ociRepositories: string[],
+    skipTLS: boolean,
+    filter?: IAppRepositoryFilter,
   ) => {
     if (repo) {
       return dispatch(
@@ -58,6 +59,8 @@ export function AppRepoAddButton({
           syncJobPodTemplate,
           registrySecrets,
           ociRepositories,
+          skipTLS,
+          filter,
         ),
       );
     } else {
@@ -72,6 +75,8 @@ export function AppRepoAddButton({
           syncJobPodTemplate,
           registrySecrets,
           ociRepositories,
+          skipTLS,
+          filter,
         ),
       );
     }
@@ -85,27 +90,23 @@ export function AppRepoAddButton({
         disabled={disabled}
         title={title}
       >
-        {primary ? <CdsIcon shape="plus-circle" inverse={true} /> : <></>}{" "}
-        {text || "Add App Repository"}
+        {primary ? <CdsIcon shape="plus-circle" /> : <></>} {text || "Add App Repository"}
       </CdsButton>
-      <Modal
-        staticBackdrop={false}
-        showModal={modalIsOpen}
-        onModalClose={closeModal}
-        modalSize="lg"
-      >
-        <div className="modal-close" onClick={closeModal}>
-          <CdsIcon shape="times-circle" size="md" solid={true} />
-        </div>
-        <AppRepoForm
-          onSubmit={onSubmit}
-          onAfterInstall={closeModal}
-          repo={repo}
-          secret={secret}
-          namespace={namespace}
-          kubeappsNamespace={kubeappsNamespace}
-        />
-      </Modal>
+      {modalIsOpen && (
+        <CdsModal size={"lg"} onCloseChange={closeModal}>
+          <CdsModalHeader>{title}</CdsModalHeader>
+          <CdsModalContent>
+            <AppRepoForm
+              onSubmit={onSubmit}
+              onAfterInstall={closeModal}
+              repo={repo}
+              secret={secret}
+              namespace={namespace}
+              kubeappsNamespace={kubeappsNamespace}
+            />
+          </CdsModalContent>
+        </CdsModal>
+      )}
     </>
   );
 }

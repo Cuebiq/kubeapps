@@ -1,5 +1,4 @@
-import { CdsIcon } from "@clr/react/icon";
-import * as React from "react";
+import { CdsIcon } from "@cds/react/icon";
 
 import Alert from "components/js/Alert";
 import { Link } from "react-router-dom";

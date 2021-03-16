@@ -48,6 +48,10 @@ type AppRepositorySpec struct {
 	// In case of an OCI type, the list of repositories is needed
 	// as there is no API for the index
 	OCIRepositories []string `json:"ociRepositories,omitempty"`
+	// TLSInsecureSkipVerify skips TLS verification
+	TLSInsecureSkipVerify bool `json:"tlsInsecureSkipVerify,omitempty"`
+	// FilterRule allows to filter packages based on a JQuery
+	FilterRule FilterRuleSpec `json:"filterRule,omitempty"`
 }
 
 // AppRepositoryAuth is the auth for an AppRepository resource
@@ -66,6 +70,12 @@ type AppRepositoryAuthHeader struct {
 type AppRepositoryCustomCA struct {
 	// Selects a key of a secret in the pod's namespace
 	SecretKeyRef corev1.SecretKeySelector `json:"secretKeyRef,omitempty"`
+}
+
+// FilterRuleSpec defines a set of rules and aggreagation logic
+type FilterRuleSpec struct {
+	JQ        string            `json:"jq"`
+	Variables map[string]string `json:"variables,omitempty"`
 }
 
 // AppRepositoryStatus is the status for an AppRepository resource

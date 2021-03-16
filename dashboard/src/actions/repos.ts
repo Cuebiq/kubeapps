@@ -1,18 +1,21 @@
 import * as yaml from "js-yaml";
 import { uniqBy } from "lodash";
 import { ThunkAction } from "redux-thunk";
-import { ActionType, createAction } from "typesafe-actions";
+import { ActionType, deprecated } from "typesafe-actions";
 import { AppRepository } from "../shared/AppRepository";
 import Chart from "../shared/Chart";
 import Secret from "../shared/Secret";
 import {
   IAppRepository,
+  IAppRepositoryFilter,
   IAppRepositoryKey,
   ISecret,
   IStoreState,
   NotFoundError,
 } from "../shared/types";
 import { errorChart } from "./charts";
+
+const { createAction } = deprecated;
 
 export const addRepo = createAction("ADD_REPO");
 export const addedRepo = createAction("ADDED_REPO", resolve => {
@@ -242,6 +245,8 @@ export const installRepo = (
   syncJobPodTemplate: string,
   registrySecrets: string[],
   ociRepositories: string[],
+  skipTLS: boolean,
+  filter?: IAppRepositoryFilter,
 ): ThunkAction<Promise<boolean>, IStoreState, null, AppReposAction> => {
   return async (dispatch, getState) => {
     const {
@@ -261,6 +266,8 @@ export const installRepo = (
         syncJobPodTemplateObj,
         registrySecrets,
         ociRepositories,
+        skipTLS,
+        filter,
       );
       dispatch(addedRepo(data.appRepository));
 
@@ -282,6 +289,8 @@ export const updateRepo = (
   syncJobPodTemplate: string,
   registrySecrets: string[],
   ociRepositories: string[],
+  skipTLS: boolean,
+  filter?: IAppRepositoryFilter,
 ): ThunkAction<Promise<boolean>, IStoreState, null, AppReposAction> => {
   return async (dispatch, getState) => {
     const {
@@ -301,6 +310,8 @@ export const updateRepo = (
         syncJobPodTemplateObj,
         registrySecrets,
         ociRepositories,
+        skipTLS,
+        filter,
       );
       dispatch(repoUpdated(data.appRepository));
       // Re-fetch the helm repo secret that could have been modified with the updated headers
@@ -333,6 +344,7 @@ export const validateRepo = (
   authHeader: string,
   customCA: string,
   ociRepositories: string[],
+  skipTLS: boolean,
 ): ThunkAction<Promise<boolean>, IStoreState, null, AppReposAction> => {
   return async (dispatch, getState) => {
     const {
@@ -347,6 +359,7 @@ export const validateRepo = (
         authHeader,
         customCA,
         ociRepositories,
+        skipTLS,
       );
       if (data.code === 200) {
         dispatch(repoValidated(data));

@@ -1,13 +1,13 @@
-import React, { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
-import { CdsToggle, CdsToggleGroup } from "@clr/react/toggle";
+import { CdsToggle, CdsToggleGroup } from "@cds/react/toggle";
 import actions from "actions";
 import { filterNames, filtersToQuery } from "components/Catalog/Catalog";
 import Alert from "components/js/Alert";
 import Table from "components/js/Table";
 import PageHeader from "components/PageHeader/PageHeader";
 import { push } from "connected-react-router";
-import * as qs from "qs";
+import qs from "qs";
 import { useDispatch, useSelector } from "react-redux";
 import { useLocation } from "react-router";
 import { Link } from "react-router-dom";
@@ -154,6 +154,7 @@ function AppRepoList() {
         title="Application Repositories"
         buttons={[
           <AppRepoAddButton
+            title="Add an App Repository"
             key="add-repo-button"
             namespace={currentNamespace}
             kubeappsNamespace={kubeappsNamespace}

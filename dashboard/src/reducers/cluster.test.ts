@@ -1,4 +1,4 @@
-import { LOCATION_CHANGE, RouterActionType } from "connected-react-router";
+import { LOCATION_CHANGE, RouterActionType, RouterLocation } from "connected-react-router";
 import context from "jest-plugin-context";
 import { getType } from "typesafe-actions";
 
@@ -64,7 +64,7 @@ describe("clusterReducer", () => {
             clusterReducer(initialTestState, {
               type: LOCATION_CHANGE,
               payload: {
-                location: { ...location, pathname: tc.path },
+                location: { ...location, pathname: tc.path } as RouterLocation<any>,
                 action: "PUSH" as RouterActionType,
                 isFirstRendering: true,
               },
@@ -444,6 +444,7 @@ describe("clusterReducer", () => {
       },
       clusters: ["additionalCluster1", "additionalCluster2"],
       authProxySkipLoginPage: false,
+      theme: "light",
     } as IConfig;
     it("re-writes the clusters to match the config.clusters state", () => {
       expect(

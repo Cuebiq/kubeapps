@@ -34,6 +34,35 @@ When Kubeapps deploys any chart from this AppRepository, if a referenced docker 
 
 There will be further work to enable private AppRepositories to be available in multiple namespaces. Details about the design can be read on the [design document](https://docs.google.com/document/d/1YEeKC6nPLoq4oaxs9v8_UsmxrRfWxB6KCyqrh2-Q8x0/edit?ts=5e2adf87).
 
+## Filter applications
+
+Since Kubeapps 2.3, it's possible to limit the number of packages that Kubeapps will expose to the users of an Application Repository. For doing so, edit the filter field of the form:
+
+<img src="../img/apprepo-form-filter.png" alt="AppRepository with filter" width="600px">
+
+- If "Exclude Packages" is marked, all the applications matching the given names will be excluded.
+- If "Regular Expression" is marked, rather than treating the input as a comma-separated list of application names, it will be treated as a [PCRE regex](https://stedolan.github.io/jq/manual/#RegularexpressionsPCRE). This can be used when the name of the application is not known or when you want to filter different applications with the same name.
+
+### Advanced filtering
+
+> **NOTE**: This is not supported by the Kubeapps Dashboard.
+
+In case you want to add a custom filter, based on a metadata field different than the name, it's possible to specify a [jq](https://stedolan.github.io/jq/) query to filter applications. This is only available when manually creating the AppRepository manifest. In this example, we are filtering applications that contain "Bitnami" as one of the maintainers:
+
+```yaml
+apiVersion: kubeapps.com/v1alpha1
+kind: AppRepository
+metadata:
+  name: my-repo
+  namespace: kubeapps
+spec:
+  url: https://my.charts.com/
+  filterRule:
+    jq: .maintainers | any(.name == "Bitnami")
+```
+
+> **Caveat**: Only the latest version of the chart is evaluated.
+
 ## ChartMuseum
 
 [ChartMuseum](https://chartmuseum.com) is an open-source Helm Chart Repository written in Go (Golang), with support for cloud storage backends, including Google Cloud Storage, Amazon S3, Microsoft Azure Blob Storage, Alibaba Cloud OSS Storage and OpenStack Object Storage.
@@ -104,6 +133,8 @@ Deploy the chart and wait for it te be ready.
 
 <img src="../img/harbor-ready.png" alt="Harbor Chart Ready" width="600px">
 
+**Note**: By default, Harbor deploys ChartMuseum to store charts. If you disable it, you can still use the Harbor OCI registry to upload charts. Checkout the [OCI](#oci-registry) section for more information.
+
 ### Harbor: Upload a Chart
 
 First create a Helm chart package:
@@ -153,6 +184,25 @@ It is possible to configure Harbor to use HTTP basic authentication:
 
   - When creating a new project for serving as the helm chart repository in Harbor, set the `Access Level` of the project to non public. This enforces authentication to access the charts in the chart repository via Helm CLI or other clients.
   - When `Adding App Repository` in Kubeapps, select `Basic Auth` for `Authorization` and specify the username and password for Harbor.
+
+## OCI Registry
+
+Since Helm v3, the project is pushing towards the idea that using an [OCI compliant registry](https://github.com/opencontainers/distribution-spec) to store Helm charts is the future. Since Kubeapps 2.2, it's also possible to use these registries to consume Helm charts. Cloud Providers like [Amazon ECR](https://aws.amazon.com/blogs/containers/oci-artifact-support-in-amazon-ecr/ ), [Google Artifact Registry](https://cloud.google.com/artifact-registry/docs/supported-formats ) or [Azure ACR](https://docs.microsoft.com/en-us/azure/container-registry/container-registry-image-formats) have also added support for OCI artifacts. 
+
+You can add an OCI registry like any other repository. For example, for a [Harbor registry](https://goharbor.io/docs/2.0.0/working-with-projects/working-with-images/managing-helm-charts/#manage-helm-charts-with-the-oci-compatible-registry-of-harbor):
+
+<img src="../img/oci-registry.png" alt="OCI Registry">
+
+There is one caveat though. It's necessary to specify the list of applications (repositories) that the registry contains. This is because the OCI specification doesn't have an endpoint to discover artifacts (unlike the index.yaml file of a Helm repository). In any case, it's possible to use the registry provider API to retrieve this list.
+
+For example, for Harbor, it's possible to query its API to retrieve the list:
+
+```console
+curl -X GET "https://harbor.domain/api/v2.0/projects/my-oci-registry/repositories" -H "accept: application/json" | jq 'map(.name) | join(", ")'
+```
+
+> **Note**: Substitute the domain `harbor.domain` and the project name `my-oci-registry` with your own.
+> Also, if the repository is not public, you can use `-u username:password` to retrieve the same list.
 
 ## Artifactory
 

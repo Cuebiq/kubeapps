@@ -1,5 +1,4 @@
 import { get, isEmpty } from "lodash";
-import React from "react";
 import { IResource, ISecret } from "shared/types";
 import SecretItemDatum from "../ResourceItem/SecretItem/SecretItemDatum";
 
@@ -11,7 +10,7 @@ function getSecretData(secret: ISecret) {
     return "This Secret is empty";
   }
   return Object.keys(data).map(k => (
-    <div className="secret-table-cel">
+    <div key={`cel-${secret.metadata.name}/${k}`} className="secret-table-cel">
       <div className="secret-table-content">
         <SecretItemDatum key={`${secret.metadata.name}/${k}`} name={k} value={data[k]} />
       </div>

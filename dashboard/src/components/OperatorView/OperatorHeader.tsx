@@ -1,5 +1,4 @@
 import PageHeader from "components/PageHeader/PageHeader";
-import * as React from "react";
 import placeholder from "../../placeholder.png";
 
 interface IOperatorHeaderProps {
@@ -22,9 +21,7 @@ export default function OperatorHeader(props: IOperatorHeaderProps) {
           <div className="header-version">
             <label className="header-version-label">Operator Version: {version}</label>
           </div>
-        ) : (
-          undefined
-        )
+        ) : undefined
       }
       buttons={buttons}
     />
