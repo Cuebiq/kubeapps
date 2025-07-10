@@ -1,452 +1,362 @@
-import * as yaml from "js-yaml";
+// Copyright 2018-2023 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
+
+import {
+  AvailablePackageReference,
+  Context,
+  InstalledPackageDetail,
+} from "gen/kubeappsapis/core/packages/v1alpha1/packages_pb";
+import {
+  PackageRepositoriesPermissions,
+  PackageRepositoryDetail,
+  PackageRepositoryReference,
+  PackageRepositorySummary,
+} from "gen/kubeappsapis/core/packages/v1alpha1/repositories_pb";
 import { uniqBy } from "lodash";
 import { ThunkAction } from "redux-thunk";
+import { PackageRepositoriesService } from "shared/PackageRepositoriesService";
+import PackagesService from "shared/PackagesService";
+import { IPkgRepoFormData, IStoreState, NotFoundNetworkError } from "shared/types";
 import { ActionType, deprecated } from "typesafe-actions";
-import { AppRepository } from "../shared/AppRepository";
-import Chart from "../shared/Chart";
-import Secret from "../shared/Secret";
-import {
-  IAppRepository,
-  IAppRepositoryFilter,
-  IAppRepositoryKey,
-  ISecret,
-  IStoreState,
-  NotFoundError,
-} from "../shared/types";
-import { errorChart } from "./charts";
+import { handleErrorAction } from "./auth";
 
 const { createAction } = deprecated;
 
-export const addRepo = createAction("ADD_REPO");
+export const addOrUpdateRepo = createAction("ADD_OR_UPDATE_REPO");
+
 export const addedRepo = createAction("ADDED_REPO", resolve => {
-  return (added: IAppRepository) => resolve(added);
+  return (repoSummary: PackageRepositorySummary) => resolve(repoSummary);
 });
 
-export const requestRepoUpdate = createAction("REQUEST_REPO_UPDATE");
-export const repoUpdated = createAction("REPO_UPDATED", resolve => {
-  return (updated: IAppRepository) => resolve(updated);
-});
-
-export const requestRepos = createAction("REQUEST_REPOS", resolve => {
-  return (namespace: string) => resolve(namespace);
-});
-export const receiveRepos = createAction("RECEIVE_REPOS", resolve => {
-  return (repos: IAppRepository[]) => resolve(repos);
-});
-export const concatRepos = createAction("RECEIVE_REPOS", resolve => {
-  return (repos: IAppRepository[]) => resolve(repos);
-});
-
-export const receiveReposSecrets = createAction("RECEIVE_REPOS_SECRETS", resolve => {
-  return (secrets: ISecret[]) => resolve(secrets);
-});
-
-export const receiveReposSecret = createAction("RECEIVE_REPOS_SECRET", resolve => {
-  return (secret: ISecret) => resolve(secret);
-});
-
-export const requestRepo = createAction("REQUEST_REPO");
-export const receiveRepo = createAction("RECEIVE_REPO", resolve => {
-  return (repo: IAppRepository) => resolve(repo);
-});
-
-export const repoValidating = createAction("REPO_VALIDATING");
-export const repoValidated = createAction("REPO_VALIDATED", resolve => {
-  return (data: any) => resolve(data);
-});
-
-// Clear repo is basically receiving an empty repo
-export const clearRepo = createAction("RECEIVE_REPO", resolve => {
-  return () => resolve({} as IAppRepository);
-});
-
-export const showForm = createAction("SHOW_FORM");
-export const hideForm = createAction("HIDE_FORM");
-export const resetForm = createAction("RESET_FORM");
-export const submitForm = createAction("SUBMIT_FROM");
-
-export const redirect = createAction("REDIRECT", resolve => {
-  return (path: string) => resolve(path);
-});
-
-export const redirected = createAction("REDIRECTED");
 export const errorRepos = createAction("ERROR_REPOS", resolve => {
-  return (err: Error, op: "create" | "update" | "fetch" | "delete" | "validate") =>
-    resolve({ err, op });
+  return (err: Error, op: "create" | "update" | "fetch" | "delete") => resolve({ err, op });
 });
 
-export const requestImagePullSecrets = createAction("REQUEST_IMAGE_PULL_SECRETS", resolve => {
+export const receiveRepoDetail = createAction("RECEIVE_REPO", resolve => {
+  return (repoDetail: PackageRepositoryDetail) => resolve(repoDetail);
+});
+
+export const receiveRepoSummaries = createAction("RECEIVE_REPOS", resolve => {
+  return (repoSummaries: PackageRepositorySummary[]) => resolve(repoSummaries);
+});
+
+export const repoUpdated = createAction("REPO_UPDATED", resolve => {
+  return (repoSummary: PackageRepositorySummary) => resolve(repoSummary);
+});
+
+export const requestRepoDetail = createAction("REQUEST_REPO");
+
+export const requestRepoSummaries = createAction("REQUEST_REPOS", resolve => {
   return (namespace: string) => resolve(namespace);
 });
-export const receiveImagePullSecrets = createAction("RECEIVE_IMAGE_PULL_SECRETS", resolve => {
-  return (secrets: ISecret[]) => resolve(secrets);
+
+export const requestReposPermissions = createAction("REQUEST_REPOS_PERMISSIONS", resolve => {
+  return (context: Context) => resolve(context);
 });
 
-export const createImagePullSecret = createAction("CREATE_IMAGE_PULL_SECRET", resolve => {
-  return (secret: ISecret) => resolve(secret);
+export const receiveReposPermissions = createAction("RECEIVE_REPOS_PERMISSIONS", resolve => {
+  return (reposPermissions: PackageRepositoriesPermissions[]) => resolve(reposPermissions);
 });
 
 const allActions = [
-  addRepo,
+  addOrUpdateRepo,
   addedRepo,
-  requestRepoUpdate,
-  repoUpdated,
-  repoValidating,
-  repoValidated,
-  clearRepo,
   errorRepos,
-  requestRepos,
-  receiveRepo,
-  receiveRepos,
-  receiveReposSecrets,
-  receiveReposSecret,
-  resetForm,
-  errorChart,
-  requestRepo,
-  submitForm,
-  showForm,
-  hideForm,
-  redirect,
-  redirected,
-  requestImagePullSecrets,
-  receiveImagePullSecrets,
-  createImagePullSecret,
+  receiveRepoDetail,
+  receiveRepoSummaries,
+  repoUpdated,
+  requestRepoDetail,
+  requestRepoSummaries,
+  requestReposPermissions,
+  receiveReposPermissions,
 ];
-export type AppReposAction = ActionType<typeof allActions[number]>;
 
-export const deleteRepo = (
-  name: string,
+export type PkgReposAction = ActionType<(typeof allActions)[number]>;
+
+// fetchRepos fetches the PackageRepositories in a specified namespace.
+export const fetchRepoSummaries = (
   namespace: string,
-): ThunkAction<Promise<boolean>, IStoreState, null, AppReposAction> => {
+  listGlobal?: boolean,
+): ThunkAction<Promise<void>, IStoreState, null, PkgReposAction> => {
   return async (dispatch, getState) => {
     const {
       clusters: { currentCluster },
+      config: { kubeappsCluster, helmGlobalNamespace, carvelGlobalNamespace },
     } = getState();
     try {
-      await AppRepository.delete(currentCluster, namespace, name);
+      dispatch(requestRepoSummaries(namespace));
+      const repos = await PackageRepositoriesService.getPackageRepositorySummaries(
+        new Context({
+          cluster: namespace ? currentCluster : kubeappsCluster,
+          namespace: namespace,
+        }),
+      );
+      if (!listGlobal || [helmGlobalNamespace, carvelGlobalNamespace].includes(namespace)) {
+        dispatch(receiveRepoSummaries(repos.packageRepositorySummaries));
+      } else {
+        // Global repos need to be added
+        // instead of passing each global repo's namespace, we defer the decision to the backend using ns=""
+        // however, this can cause issues when using unprivileged users, see #5215
+        let totalRepos = repos.packageRepositorySummaries;
+        dispatch(requestRepoSummaries(""));
+        // Global repos are only related to the Kubeapps cluster
+        const globalRepos = await PackageRepositoriesService.getPackageRepositorySummaries(
+          new Context({
+            cluster: kubeappsCluster,
+            namespace: "",
+          }),
+        );
+        // Avoid adding duplicated repos: if two repos have the same uid, filter out
+        totalRepos = uniqBy(
+          totalRepos.concat(globalRepos.packageRepositorySummaries),
+          "packageRepoRef.identifier",
+        );
+        dispatch(receiveRepoSummaries(totalRepos));
+      }
+    } catch (e: any) {
+      dispatch(handleErrorAction(e, errorRepos(e, "fetch")));
+    }
+  };
+};
+
+export const fetchRepoDetail = (
+  packageRepoRef: PackageRepositoryReference,
+): ThunkAction<Promise<boolean>, IStoreState, null, PkgReposAction> => {
+  return async dispatch => {
+    try {
+      dispatch(requestRepoDetail());
+      const getPackageRepositoryDetailResponse =
+        await PackageRepositoriesService.getPackageRepositoryDetail(packageRepoRef);
+      if (!getPackageRepositoryDetailResponse?.detail) {
+        dispatch(
+          errorRepos(
+            new Error(
+              `Can't get the repository: ${JSON.stringify(getPackageRepositoryDetailResponse)}`,
+            ),
+            "fetch",
+          ),
+        );
+        return false;
+      }
+      dispatch(receiveRepoDetail(getPackageRepositoryDetailResponse.detail));
       return true;
-    } catch (e) {
-      dispatch(errorRepos(e, "delete"));
+    } catch (e: any) {
+      dispatch(handleErrorAction(e, errorRepos(e, "fetch")));
       return false;
     }
   };
 };
 
-export const resyncRepo = (
-  name: string,
-  namespace: string,
-): ThunkAction<Promise<void>, IStoreState, null, AppReposAction> => {
+export const addRepo = (
+  request: IPkgRepoFormData,
+): ThunkAction<Promise<boolean>, IStoreState, null, PkgReposAction> => {
   return async (dispatch, getState) => {
     const {
       clusters: { currentCluster },
     } = getState();
     try {
-      await AppRepository.resync(currentCluster, namespace, name);
-    } catch (e) {
-      dispatch(errorRepos(e, "update"));
-    }
-  };
-};
-
-export const resyncAllRepos = (
-  repos: IAppRepositoryKey[],
-): ThunkAction<Promise<void>, IStoreState, null, AppReposAction> => {
-  return async (dispatch, getState) => {
-    repos.forEach(repo => {
-      dispatch(resyncRepo(repo.name, repo.namespace));
-    });
-  };
-};
-
-export const fetchRepoSecrets = (
-  namespace: string,
-): ThunkAction<Promise<void>, IStoreState, null, AppReposAction> => {
-  return async (dispatch, getState) => {
-    const {
-      clusters: { currentCluster },
-    } = getState();
-    try {
-      // TODO(andresmgot): Create an endpoint for returning credentials related to an AppRepository
-      // to avoid listing secrets
-      // https://github.com/kubeapps/kubeapps/issues/1686
-      const secrets = await Secret.list(currentCluster, namespace);
-      const repoSecrets = secrets.items?.filter(s =>
-        s.metadata.ownerReferences?.some(ownerRef => ownerRef.kind === "AppRepository"),
-      );
-      dispatch(receiveReposSecrets(repoSecrets));
-    } catch (e) {
-      dispatch(errorRepos(e, "fetch"));
-    }
-  };
-};
-
-export const fetchRepoSecret = (
-  namespace: string,
-  name: string,
-): ThunkAction<Promise<void>, IStoreState, null, AppReposAction> => {
-  return async (dispatch, getState) => {
-    const {
-      clusters: { currentCluster },
-    } = getState();
-    try {
-      const secret = await Secret.get(currentCluster, namespace, name);
-      dispatch(receiveReposSecret(secret));
-    } catch (e) {
-      dispatch(errorRepos(e, "fetch"));
-    }
-  };
-};
-
-// fetchRepos fetches the AppRepositories in a specified namespace.
-export const fetchRepos = (
-  namespace: string,
-  listGlobal?: boolean,
-): ThunkAction<Promise<void>, IStoreState, null, AppReposAction> => {
-  return async (dispatch, getState) => {
-    const {
-      clusters: { currentCluster },
-      config: { kubeappsNamespace },
-    } = getState();
-    try {
-      dispatch(requestRepos(namespace));
-      const repos = await AppRepository.list(currentCluster, namespace);
-      dispatch(fetchRepoSecrets(namespace));
-      if (!listGlobal || namespace === kubeappsNamespace) {
-        dispatch(receiveRepos(repos.items));
-      } else {
-        let totalRepos = repos.items;
-        dispatch(requestRepos(kubeappsNamespace));
-        const globalRepos = await AppRepository.list(currentCluster, kubeappsNamespace);
-        // Avoid adding duplicated repos: if two repos have the same uid, filter out
-        totalRepos = uniqBy(totalRepos.concat(globalRepos.items), "metadata.uid");
-        dispatch(receiveRepos(totalRepos));
-      }
-    } catch (e) {
-      dispatch(errorRepos(e, "fetch"));
-    }
-  };
-};
-
-function parsePodTemplate(syncJobPodTemplate: string) {
-  let syncJobPodTemplateObj: any = {};
-  if (syncJobPodTemplate.length) {
-    syncJobPodTemplateObj = yaml.load(syncJobPodTemplate);
-  }
-  return syncJobPodTemplateObj;
-}
-
-export const installRepo = (
-  name: string,
-  namespace: string,
-  repoURL: string,
-  type: string,
-  authHeader: string,
-  customCA: string,
-  syncJobPodTemplate: string,
-  registrySecrets: string[],
-  ociRepositories: string[],
-  skipTLS: boolean,
-  filter?: IAppRepositoryFilter,
-): ThunkAction<Promise<boolean>, IStoreState, null, AppReposAction> => {
-  return async (dispatch, getState) => {
-    const {
-      clusters: { currentCluster },
-    } = getState();
-    try {
-      const syncJobPodTemplateObj = parsePodTemplate(syncJobPodTemplate);
-      dispatch(addRepo());
-      const data = await AppRepository.create(
+      dispatch(addOrUpdateRepo());
+      const addPackageRepositoryResponse = await PackageRepositoriesService.addPackageRepository(
         currentCluster,
-        name,
-        namespace,
-        repoURL,
-        type,
-        authHeader,
-        customCA,
-        syncJobPodTemplateObj,
-        registrySecrets,
-        ociRepositories,
-        skipTLS,
-        filter,
+        request,
       );
-      dispatch(addedRepo(data.appRepository));
-
+      // Ensure the repo have been created
+      if (!addPackageRepositoryResponse?.packageRepoRef) {
+        dispatch(
+          errorRepos(
+            new Error(
+              `Can't create the repository: ${JSON.stringify(addPackageRepositoryResponse)}`,
+            ),
+            "create",
+          ),
+        );
+        return false;
+      }
+      const getPackageRepositoryDetailResponse =
+        await PackageRepositoriesService.getPackageRepositoryDetail(
+          addPackageRepositoryResponse.packageRepoRef,
+        );
+      if (!getPackageRepositoryDetailResponse?.detail) {
+        dispatch(
+          errorRepos(
+            new Error(
+              `The repo wasn't created: ${JSON.stringify(getPackageRepositoryDetailResponse)}`,
+            ),
+            "create",
+          ),
+        );
+        return false;
+      }
+      const repoSummary = convertPkgRepoDetailToSummary(getPackageRepositoryDetailResponse.detail);
+      dispatch(addedRepo(repoSummary));
       return true;
-    } catch (e) {
-      dispatch(errorRepos(e, "create"));
+    } catch (e: any) {
+      dispatch(handleErrorAction(e, errorRepos(e, "create")));
       return false;
     }
   };
 };
 
 export const updateRepo = (
-  name: string,
-  namespace: string,
-  repoURL: string,
-  type: string,
-  authHeader: string,
-  customCA: string,
-  syncJobPodTemplate: string,
-  registrySecrets: string[],
-  ociRepositories: string[],
-  skipTLS: boolean,
-  filter?: IAppRepositoryFilter,
-): ThunkAction<Promise<boolean>, IStoreState, null, AppReposAction> => {
+  request: IPkgRepoFormData,
+): ThunkAction<Promise<boolean>, IStoreState, null, PkgReposAction> => {
   return async (dispatch, getState) => {
     const {
       clusters: { currentCluster },
     } = getState();
     try {
-      const syncJobPodTemplateObj = parsePodTemplate(syncJobPodTemplate);
-      dispatch(requestRepoUpdate());
-      const data = await AppRepository.update(
-        currentCluster,
-        name,
-        namespace,
-        repoURL,
-        type,
-        authHeader,
-        customCA,
-        syncJobPodTemplateObj,
-        registrySecrets,
-        ociRepositories,
-        skipTLS,
-        filter,
-      );
-      dispatch(repoUpdated(data.appRepository));
-      // Re-fetch the helm repo secret that could have been modified with the updated headers
-      // so that if the user chooses to edit the app repo again, they will see the current value.
-      if (data.appRepository.spec?.auth) {
-        let secretName = "";
-        if (data.appRepository.spec.auth.header) {
-          secretName = data.appRepository.spec.auth.header.secretKeyRef.name;
-          dispatch(fetchRepoSecret(namespace, secretName));
-        }
-        if (
-          data.appRepository.spec.auth.customCA &&
-          secretName !== data.appRepository.spec.auth.customCA.secretKeyRef.name
-        ) {
-          secretName = data.appRepository.spec.auth.customCA.secretKeyRef.name;
-          dispatch(fetchRepoSecret(namespace, secretName));
-        }
-      }
-      return true;
-    } catch (e) {
-      dispatch(errorRepos(e, "update"));
-      return false;
-    }
-  };
-};
+      dispatch(addOrUpdateRepo());
+      const updatePackageRepositoryResponse =
+        await PackageRepositoriesService.updatePackageRepository(currentCluster, request);
 
-export const validateRepo = (
-  repoURL: string,
-  type: string,
-  authHeader: string,
-  customCA: string,
-  ociRepositories: string[],
-  skipTLS: boolean,
-): ThunkAction<Promise<boolean>, IStoreState, null, AppReposAction> => {
-  return async (dispatch, getState) => {
-    const {
-      clusters: { currentCluster },
-    } = getState();
-    try {
-      dispatch(repoValidating());
-      const data = await AppRepository.validate(
-        currentCluster,
-        repoURL,
-        type,
-        authHeader,
-        customCA,
-        ociRepositories,
-        skipTLS,
-      );
-      if (data.code === 200) {
-        dispatch(repoValidated(data));
-        return true;
-      } else {
-        dispatch(errorRepos(new Error(JSON.stringify(data)), "validate"));
+      // Ensure the repo have been updated
+      if (!updatePackageRepositoryResponse?.packageRepoRef) {
+        dispatch(
+          errorRepos(
+            new Error(
+              `Can't update the repository: ${JSON.stringify(updatePackageRepositoryResponse)}`,
+            ),
+            "update",
+          ),
+        );
         return false;
       }
-    } catch (e) {
-      dispatch(errorRepos(e, "validate"));
+      const getPackageRepositoryDetailResponse =
+        await PackageRepositoriesService.getPackageRepositoryDetail(
+          updatePackageRepositoryResponse.packageRepoRef,
+        );
+      if (!getPackageRepositoryDetailResponse?.detail) {
+        dispatch(
+          errorRepos(
+            new Error(
+              `The repo wasn't updated: ${JSON.stringify(getPackageRepositoryDetailResponse)}`,
+            ),
+            "update",
+          ),
+        );
+        return false;
+      }
+      const repoSummary = convertPkgRepoDetailToSummary(getPackageRepositoryDetailResponse.detail);
+      dispatch(repoUpdated(repoSummary));
+      return true;
+    } catch (e: any) {
+      dispatch(handleErrorAction(e, errorRepos(e, "update")));
       return false;
     }
   };
 };
 
-export function checkChart(
+export const deleteRepo = (
+  packageRepoRef: PackageRepositoryReference,
+): ThunkAction<Promise<boolean>, IStoreState, null, PkgReposAction> => {
+  return async dispatch => {
+    try {
+      await PackageRepositoriesService.deletePackageRepository(packageRepoRef);
+      return true;
+    } catch (e: any) {
+      dispatch(handleErrorAction(e, errorRepos(e, "delete")));
+      return false;
+    }
+  };
+};
+
+export const findPackageInRepo = (
   cluster: string,
   repoNamespace: string,
-  repo: string,
-  chartName: string,
-): ThunkAction<Promise<boolean>, IStoreState, null, AppReposAction> {
-  return async (dispatch, getState) => {
-    dispatch(requestRepo());
-    const appRepository = await AppRepository.get(cluster, repoNamespace, repo);
-    try {
-      await Chart.fetchChartVersions(cluster, repoNamespace, `${repo}/${chartName}`);
-      dispatch(receiveRepo(appRepository));
-      return true;
-    } catch (e) {
+  repoName: string,
+  app?: InstalledPackageDetail,
+): ThunkAction<Promise<boolean>, IStoreState, null, PkgReposAction> => {
+  return async dispatch => {
+    dispatch(requestRepoDetail());
+    // Check if we have enough data to retrieve the package manually (instead of using its own availablePackageRef)
+    if (app?.availablePackageRef?.identifier && app?.availablePackageRef?.plugin) {
+      const getPackageRepositoryDetailResponse =
+        await PackageRepositoriesService.getPackageRepositoryDetail(
+          new PackageRepositoryReference({
+            identifier: repoName,
+            context: new Context({ cluster, namespace: repoNamespace }),
+            plugin: app.availablePackageRef.plugin,
+          }),
+        );
+      try {
+        await PackagesService.getAvailablePackageVersions({
+          context: { cluster: cluster, namespace: repoNamespace },
+          plugin: app.availablePackageRef.plugin,
+          identifier: app.availablePackageRef.identifier,
+        } as AvailablePackageReference);
+        if (!getPackageRepositoryDetailResponse?.detail) {
+          dispatch(
+            errorRepos(
+              new NotFoundNetworkError(
+                `Package ${app.availablePackageRef.identifier} not found in the repository ${repoNamespace}.`,
+              ),
+              "fetch",
+            ),
+          );
+          return false;
+        }
+        dispatch(receiveRepoDetail(getPackageRepositoryDetailResponse.detail));
+        return true;
+      } catch (e: any) {
+        dispatch(
+          handleErrorAction(
+            e,
+            errorRepos(
+              new NotFoundNetworkError(
+                `Package ${app.availablePackageRef.identifier} not found in the repository ${repoNamespace}.`,
+              ),
+              "fetch",
+            ),
+          ),
+        );
+        return false;
+      }
+    } else {
       dispatch(
-        errorChart(new NotFoundError(`Chart ${chartName} not found in the repository ${repo}.`)),
+        errorRepos(
+          new NotFoundNetworkError(
+            `The installed application '${app?.name}' does not have any matching package in the repository '${repoName}'. Are you sure you installed this application from a repository?`,
+          ),
+          "fetch",
+        ),
       );
       return false;
     }
   };
-}
+};
 
-export function fetchImagePullSecrets(
+export const fetchReposPermissions = (
+  cluster: string,
   namespace: string,
-): ThunkAction<Promise<void>, IStoreState, null, AppReposAction> {
-  return async (dispatch, getState) => {
-    const {
-      clusters: { currentCluster },
-    } = getState();
+): ThunkAction<Promise<boolean>, IStoreState, null, PkgReposAction> => {
+  return async dispatch => {
     try {
-      dispatch(requestImagePullSecrets(namespace));
-      // TODO(andresmgot): Create an endpoint for returning just the list of secret names
-      // to avoid listing all the secrets with protected information
-      // https://github.com/kubeapps/kubeapps/issues/1686
-      const secrets = await Secret.list(currentCluster, namespace);
-      const imgPullSecrets = secrets.items?.filter(
-        s => s.type === "kubernetes.io/dockerconfigjson",
-      );
-      dispatch(receiveImagePullSecrets(imgPullSecrets));
-    } catch (e) {
-      dispatch(errorRepos(e, "fetch"));
-    }
-  };
-}
-
-export function createDockerRegistrySecret(
-  name: string,
-  user: string,
-  password: string,
-  email: string,
-  server: string,
-  namespace: string,
-): ThunkAction<Promise<boolean>, IStoreState, null, AppReposAction> {
-  return async (dispatch, getState) => {
-    const {
-      clusters: { currentCluster },
-    } = getState();
-    try {
-      const secret = await Secret.createPullSecret(
-        currentCluster,
-        name,
-        user,
-        password,
-        email,
-        server,
+      dispatch(requestReposPermissions({ cluster: cluster, namespace: namespace } as Context));
+      const permissions = await PackageRepositoriesService.getRepositoriesPermissions(
+        cluster,
         namespace,
       );
-      dispatch(createImagePullSecret(secret));
+      dispatch(receiveReposPermissions(permissions));
       return true;
-    } catch (e) {
-      dispatch(errorRepos(e, "fetch"));
+    } catch (e: any) {
+      dispatch(handleErrorAction(e, errorRepos(e, "fetch")));
       return false;
     }
   };
-}
+};
+
+export const convertPkgRepoDetailToSummary = (
+  repoDetail: PackageRepositoryDetail,
+): PackageRepositorySummary => {
+  const repoSummary = new PackageRepositorySummary({
+    description: repoDetail.description,
+    name: repoDetail.name,
+    type: repoDetail.type,
+    url: repoDetail.url,
+    namespaceScoped: repoDetail.namespaceScoped,
+    requiresAuth: !!repoDetail.auth,
+    packageRepoRef: repoDetail.packageRepoRef,
+    status: repoDetail.status,
+  });
+  return repoSummary;
+};

@@ -1,26 +1,25 @@
-import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
-import { CSSTransition } from "react-transition-group";
+// Copyright 2020-2024 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
 
 import { CdsButton } from "@cds/react/button";
 import { CdsIcon } from "@cds/react/icon";
 import { CdsToggle } from "@cds/react/toggle";
-import useOutsideClick from "../js/hooks/useOutsideClick/useOutsideClick";
-
-import { IClustersState } from "../../reducers/cluster";
-import Row from "../js/Row";
-
 import actions from "actions";
 import { getThemeFile } from "components/HeadManager/HeadManager";
+import Row from "components/Row";
+import useOutsideClick from "components/hooks/useOutsideClick";
+import operatorIcon from "icons/olm-icon-white.svg";
+import { useEffect, useRef, useState } from "react";
 import { Helmet } from "react-helmet";
 import { useDispatch, useSelector } from "react-redux";
+import { Link } from "react-router-dom";
+import { CSSTransition } from "react-transition-group";
+import { IClustersState } from "reducers/cluster";
 import { Action } from "redux";
 import { ThunkDispatch } from "redux-thunk";
 import { SupportedThemes } from "shared/Config";
 import { IStoreState } from "shared/types";
 import { app } from "shared/url";
-import helmIcon from "../../icons/helm-white.svg";
-import operatorIcon from "../../icons/operator-framework-white.svg";
 import "./Menu.css";
 
 export interface IContextSelectorProps {
@@ -39,25 +38,30 @@ function Menu({ clusters, appVersion, logout }: IContextSelectorProps) {
   useOutsideClick(setOpen, [ref], open);
 
   const {
-    config: { theme },
+    config: { theme, featureFlags },
   } = useSelector((state: IStoreState) => state);
 
   const toggleOpen = () => setOpen(!open);
 
   const toggleTheme = () => {
     const newTheme = theme === SupportedThemes.dark ? SupportedThemes.light : SupportedThemes.dark;
-    dispatch(actions.config.setTheme(newTheme));
+    dispatch(actions.config.setUserTheme(newTheme));
   };
 
   useEffect(() => {
     document.body.setAttribute("cds-theme", theme);
   }, [theme]);
 
+  /* eslint-disable jsx-a11y/label-has-associated-control */
   return (
     <>
       <Helmet>
         {/*  Override the clarity-ui css style */}
-        <link rel="stylesheet" type="text/css" href={getThemeFile(SupportedThemes[theme])} />
+        <link
+          rel="stylesheet"
+          type="text/css"
+          href={getThemeFile(SupportedThemes[theme as keyof typeof SupportedThemes])}
+        />
       </Helmet>
 
       <div className={open ? "drawer-backdrop" : ""} />
@@ -75,33 +79,35 @@ function Menu({ clusters, appVersion, logout }: IContextSelectorProps) {
             <div>
               <label className="dropdown-menu-padding dropdown-menu-label">Administration</label>
               <Link
-                to={app.config.apprepositories(clusters.currentCluster, namespaceSelected)}
+                to={app.config.pkgrepositories(clusters.currentCluster, namespaceSelected)}
                 className="dropdown-menu-link"
                 onClick={toggleOpen}
               >
                 <div className="dropdown-menu-item" role="menuitem">
-                  <img src={helmIcon} alt="helm-icon" />
-                  <span>App Repositories</span>
+                  <CdsIcon solid={true} size="md" shape="library" />{" "}
+                  <span>Package Repositories</span>
                 </div>
               </Link>
               <div className="dropdown-divider" role="separator" />
-              <Link
-                to={app.config.operators(clusters.currentCluster, namespaceSelected)}
-                className="dropdown-menu-link"
-                onClick={toggleOpen}
-              >
-                <div className="dropdown-menu-item" role="menuitem">
-                  <img src={operatorIcon} alt="helm-icon" />
-                  <span>Operators</span>
-                </div>
-              </Link>
-              <div className="dropdown-divider" role="separator" />
+              {featureFlags?.operators && (
+                <Link
+                  to={app.config.operators(clusters.currentCluster, namespaceSelected)}
+                  className="dropdown-menu-link"
+                  onClick={toggleOpen}
+                >
+                  <div className="dropdown-menu-item" role="menuitem">
+                    <img src={operatorIcon} alt="operators-icon" />
+                    <span>Operators</span>
+                  </div>
+                </Link>
+              )}
+              {featureFlags?.operators && <div className="dropdown-divider" role="separator" />}
             </div>
             <div>
               <div className="dropdown-menu-subtext">
-                Made with <CdsIcon size="sm" shape="heart" solid={true} /> by Bitnami and{" "}
+                Made with <CdsIcon size="sm" shape="heart" solid={true} /> by VMware by Broadcom and{" "}
                 <a
-                  href="https://github.com/kubeapps/kubeapps/graphs/contributors"
+                  href="https://github.com/vmware-tanzu/kubeapps/graphs/contributors"
                   className="type-color-white"
                   target="_blank"
                   rel="noopener noreferrer"

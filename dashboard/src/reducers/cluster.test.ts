@@ -1,11 +1,13 @@
-import { LOCATION_CHANGE, RouterActionType, RouterLocation } from "connected-react-router";
-import context from "jest-plugin-context";
-import { getType } from "typesafe-actions";
+// Copyright 2020-2023 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
 
+import { LOCATION_CHANGE } from "hooks/push";
+import { Location } from "react-router";
+import context from "jest-plugin-context";
 import { Auth } from "shared/Auth";
 import { IConfig } from "shared/Config";
+import { getType } from "typesafe-actions";
 import actions from "../actions";
-import { IResource } from "../shared/types";
 import clusterReducer, { IClustersState, initialState } from "./cluster";
 
 describe("clusterReducer", () => {
@@ -25,10 +27,12 @@ describe("clusterReducer", () => {
     },
   };
   context("when LOCATION CHANGE", () => {
-    const location = {
+    const location: Location = {
       hash: "",
+      pathname: "",
       search: "",
       state: "",
+      key: "",
     };
 
     describe("changes the current stored namespace if it is in the URL", () => {
@@ -64,9 +68,7 @@ describe("clusterReducer", () => {
             clusterReducer(initialTestState, {
               type: LOCATION_CHANGE,
               payload: {
-                location: { ...location, pathname: tc.path } as RouterLocation<any>,
-                action: "PUSH" as RouterActionType,
-                isFirstRendering: true,
+                location: { ...location, pathname: tc.path },
               },
             }),
           ).toEqual({
@@ -177,10 +179,10 @@ describe("clusterReducer", () => {
             },
           } as IClustersState,
           {
-            type: getType(actions.namespace.receiveNamespace),
+            type: getType(actions.namespace.receiveNamespaceExists),
             payload: {
               cluster: "other",
-              namespace: { metadata: { name: "bar" } } as IResource,
+              namespace: "bar",
             },
           },
         ),
@@ -434,17 +436,24 @@ describe("clusterReducer", () => {
     const config = {
       kubeappsCluster: "",
       kubeappsNamespace: "kubeapps",
+      helmGlobalNamespace: "kubeapps-global",
+      carvelGlobalNamespace: "kapp-controller-packaging-global",
       appVersion: "dev",
       authProxyEnabled: false,
       oauthLoginURI: "",
       oauthLogoutURI: "",
       featureFlags: {
         operators: false,
-        ui: "hex",
+        schemaEditor: { enabled: false },
       },
       clusters: ["additionalCluster1", "additionalCluster2"],
       authProxySkipLoginPage: false,
       theme: "light",
+      remoteComponentsUrl: "",
+      customAppViews: [],
+      skipAvailablePackageDetails: false,
+      createNamespaceLabels: {},
+      configuredPlugins: [],
     } as IConfig;
     it("re-writes the clusters to match the config.clusters state", () => {
       expect(

@@ -1,11 +1,15 @@
+// Copyright 2018-2022 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
+
 import { IAuthState } from "reducers/auth";
 import configureMockStore from "redux-mock-store";
 import thunk from "redux-thunk";
+import { Auth } from "shared/Auth";
+import Namespace, * as NS from "shared/Namespace";
+import { initialState } from "shared/specs/mountWrapper";
+import { IStoreState } from "shared/types";
 import { getType } from "typesafe-actions";
 import actions from ".";
-import { Auth } from "../shared/Auth";
-import Namespace from "../shared/Namespace";
-import * as NS from "../shared/Namespace";
 
 const defaultCluster = "default";
 const mockStore = configureMockStore([thunk]);
@@ -26,19 +30,19 @@ beforeEach(() => {
   Auth.isAuthenticatedWithCookie = jest.fn().mockReturnValue("token");
   Auth.setAuthToken = jest.fn();
   Auth.unsetAuthToken = jest.fn();
-  Namespace.list = jest.fn(async () => {
-    return { namespaces: [] };
-  });
+  Namespace.list = jest.fn(async () => []);
   jest.spyOn(NS, "unsetStoredNamespace");
 
   store = mockStore({
     auth: {
+      ...initialState.auth,
       state,
     },
     config: {
+      ...initialState.config,
       oauthLogoutURI: "/log/out",
     },
-  });
+  } as Partial<IStoreState>);
 });
 
 afterEach(() => {
@@ -131,7 +135,7 @@ describe("OIDC authentication", () => {
     });
   });
 
-  it("expires the session and logs out ", () => {
+  it("expires the session and logs out", () => {
     Auth.usingOIDCToken = jest.fn(() => true);
     // After the JSDOM upgrade, window.xxx are read-only properties
     // https://github.com/facebook/jest/issues/9471

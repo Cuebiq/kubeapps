@@ -1,18 +1,21 @@
+// Copyright 2018-2022 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
+
 import configureMockStore from "redux-mock-store";
 import thunk from "redux-thunk";
 import { Kube } from "shared/Kube";
+import Namespace from "shared/Namespace";
 import { getType } from "typesafe-actions";
-import Namespace from "../shared/Namespace";
 import {
   canCreate,
   createNamespace,
   errorNamespaces,
   fetchNamespaces,
-  getNamespace,
+  checkNamespaceExists,
   postNamespace,
-  receiveNamespace,
+  receiveNamespaceExists,
   receiveNamespaces,
-  requestNamespace,
+  requestNamespaceExists,
   setAllowCreate,
   setNamespace,
   setNamespaceState,
@@ -68,14 +71,28 @@ actionTestCases.forEach(tc => {
 describe("fetchNamespaces", () => {
   it("dispatches the list of namespace names if no error", async () => {
     Namespace.list = jest.fn().mockImplementationOnce(() => {
-      return {
-        namespaces: [{ metadata: { name: "overlook-hotel" } }, { metadata: { name: "room-217" } }],
-      };
+      return ["overlook-hotel", "room-217"];
     });
     const expectedActions = [
       {
         type: getType(receiveNamespaces),
         payload: { cluster: "default-c", namespaces: ["overlook-hotel", "room-217"] },
+      },
+    ];
+
+    await store.dispatch(fetchNamespaces("default-c"));
+    expect(store.getActions()).toEqual(expectedActions);
+  });
+
+  it("dispatches errorNamespace if the request returns no 'namespaces'", async () => {
+    Namespace.list = jest.fn().mockImplementationOnce(() => {
+      return [];
+    });
+    const err = new Error("The current account does not have access to any namespaces");
+    const expectedActions = [
+      {
+        type: getType(errorNamespaces),
+        payload: { cluster: "default-c", err, op: "list" },
       },
     ];
 
@@ -103,9 +120,7 @@ describe("createNamespace", () => {
   it("dispatches the new namespace and re-fetch namespaces", async () => {
     Namespace.create = jest.fn();
     Namespace.list = jest.fn().mockImplementationOnce(() => {
-      return {
-        namespaces: [{ metadata: { name: "overlook-hotel" } }, { metadata: { name: "room-217" } }],
-      };
+      return ["overlook-hotel", "room-217"];
     });
     const expectedActions = [
       {
@@ -118,7 +133,7 @@ describe("createNamespace", () => {
       },
     ];
 
-    const res = await store.dispatch(createNamespace("default-c", "overlook-hotel"));
+    const res = await store.dispatch(createNamespace("default-c", "overlook-hotel", {}));
     expect(res).toBe(true);
     expect(store.getActions()).toEqual(expectedActions);
   });
@@ -133,37 +148,53 @@ describe("createNamespace", () => {
       },
     ];
 
-    const res = await store.dispatch(createNamespace("default-c", "foo"));
+    const res = await store.dispatch(createNamespace("default-c", "foo", {}));
     expect(res).toBe(false);
     expect(store.getActions()).toEqual(expectedActions);
   });
 });
 
-describe("getNamespace", () => {
-  it("dispatches requested namespace", async () => {
-    const ns = { metadata: { name: "default" } };
-    Namespace.get = jest.fn().mockReturnValue(ns);
+describe("checkNamespaceExists", () => {
+  it("returns true if the namespace exists", async () => {
+    Namespace.exists = jest.fn().mockReturnValue(true);
     const expectedActions = [
       {
-        type: getType(requestNamespace),
+        type: getType(requestNamespaceExists),
         payload: { cluster: "default-c", namespace: "default-ns" },
       },
       {
-        type: getType(receiveNamespace),
-        payload: { cluster: "default-c", namespace: ns },
+        type: getType(receiveNamespaceExists),
+        payload: { cluster: "default-c", namespace: "default-ns" },
       },
     ];
-    const r = await store.dispatch(getNamespace("default-c", "default-ns"));
-    expect(r).toBe(true);
+
+    const exists = await store.dispatch(checkNamespaceExists("default-c", "default-ns"));
+
+    expect(exists).toBe(true);
+    expect(store.getActions()).toEqual(expectedActions);
+  });
+
+  it("returns false if the namespace does not exist", async () => {
+    Namespace.exists = jest.fn().mockReturnValue(false);
+    const expectedActions = [
+      {
+        type: getType(requestNamespaceExists),
+        payload: { cluster: "default-c", namespace: "default-ns" },
+      },
+    ];
+
+    const exists = await store.dispatch(checkNamespaceExists("default-c", "default-ns"));
+
+    expect(exists).toBe(false);
     expect(store.getActions()).toEqual(expectedActions);
   });
 
   it("dispatches errorNamespace if error creating a namespace", async () => {
     const err = new Error("Bang!");
-    Namespace.get = jest.fn().mockImplementationOnce(() => Promise.reject(err));
+    Namespace.exists = jest.fn().mockImplementationOnce(() => Promise.reject(err));
     const expectedActions = [
       {
-        type: getType(requestNamespace),
+        type: getType(requestNamespaceExists),
         payload: { cluster: "default-c", namespace: "default-ns" },
       },
       {
@@ -171,7 +202,7 @@ describe("getNamespace", () => {
         payload: { cluster: "default-c", err, op: "get" },
       },
     ];
-    const r = await store.dispatch(getNamespace("default-c", "default-ns"));
+    const r = await store.dispatch(checkNamespaceExists("default-c", "default-ns"));
     expect(r).toBe(false);
     expect(store.getActions()).toEqual(expectedActions);
   });
@@ -196,7 +227,10 @@ describe("setNamespace", () => {
 
 describe("canCreate", () => {
   it("checks if it can create namespaces", async () => {
-    Kube.canI = jest.fn().mockReturnValue(true);
+    Kube.canI = jest.fn().mockReturnValue({
+      then: jest.fn(f => f(true)),
+      catch: jest.fn(f => f(false)),
+    });
     const expectedActions = [
       {
         type: getType(setAllowCreate),

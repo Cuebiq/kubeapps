@@ -1,15 +1,17 @@
+// Copyright 2020-2023 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
+
 import { get } from "lodash";
 import { ThunkAction } from "redux-thunk";
-import { ActionType, deprecated } from "typesafe-actions";
-
-import { Operators } from "../shared/Operators";
+import { Operators } from "shared/Operators";
 import {
   IClusterServiceVersion,
   IClusterServiceVersionCRD,
   IPackageManifest,
   IResource,
   IStoreState,
-} from "../shared/types";
+} from "shared/types";
+import { ActionType, deprecated } from "typesafe-actions";
 
 const { createAction } = deprecated;
 
@@ -138,7 +140,7 @@ const actions = [
   errorSubscriptionList,
 ];
 
-export type OperatorAction = ActionType<typeof actions[number]>;
+export type OperatorAction = ActionType<(typeof actions)[number]>;
 
 export function checkOLMInstalled(
   cluster: string,
@@ -152,7 +154,7 @@ export function checkOLMInstalled(
         dispatch(OLMInstalled());
       }
       return installed;
-    } catch (e) {
+    } catch (e: any) {
       dispatch(errorOLMCheck(e));
       return false;
     }
@@ -169,7 +171,7 @@ export function getOperators(
       const operators = await Operators.getOperators(cluster, namespace);
       const sortedOp = operators.sort((o1, o2) => (o1.metadata.name > o2.metadata.name ? 1 : -1));
       dispatch(receiveOperators(sortedOp));
-    } catch (e) {
+    } catch (e: any) {
       dispatch(errorOperators(e));
     }
   };
@@ -185,7 +187,7 @@ export function getOperator(
     try {
       const operator = await Operators.getOperator(cluster, namespace, operatorName);
       dispatch(receiveOperator(operator));
-    } catch (e) {
+    } catch (e: any) {
       dispatch(errorOperators(e));
     }
   };
@@ -202,7 +204,7 @@ export function getCSVs(
       const sortedCSVs = csvs.sort((o1, o2) => (o1.metadata.name > o2.metadata.name ? 1 : -1));
       dispatch(receiveCSVs(sortedCSVs));
       return sortedCSVs;
-    } catch (e) {
+    } catch (e: any) {
       dispatch(errorCSVs(e));
       return [];
     }
@@ -220,7 +222,7 @@ export function getCSV(
       const csv = await Operators.getCSV(cluster, namespace, name);
       dispatch(receiveCSV(csv));
       return csv;
-    } catch (e) {
+    } catch (e: any) {
       dispatch(errorCSVs(e));
       return;
     }
@@ -240,7 +242,7 @@ export function createResource(
       const r = await Operators.createResource(cluster, namespace, apiVersion, resource, body);
       dispatch(resourceCreated(r));
       return true;
-    } catch (e) {
+    } catch (e: any) {
       dispatch(errorResourceCreate(e));
       return false;
     }
@@ -265,7 +267,7 @@ export function deleteResource(
       );
       dispatch(resourceDeleted());
       return true;
-    } catch (e) {
+    } catch (e: any) {
       dispatch(errorResourceDelete(e));
       return false;
     }
@@ -293,7 +295,7 @@ export function updateResource(
       );
       dispatch(resourceUpdated(r));
       return true;
-    } catch (e) {
+    } catch (e: any) {
       dispatch(errorResourceUpdate(e));
       return false;
     }
@@ -322,12 +324,12 @@ export function getResources(
         try {
           const csvResources = await Operators.listResources(
             cluster,
-            namespace,
+            csv.metadata.namespace,
             `${group}/${crd.version}`,
             plural,
           );
           resources = resources.concat(csvResources.items);
-        } catch (e) {
+        } catch (e: any) {
           dispatch(errorCustomResource(e));
         }
       });
@@ -362,7 +364,7 @@ export function getResource(
             resourceName,
           );
           dispatch(receiveCustomResource(resource));
-        } catch (e) {
+        } catch (e: any) {
           dispatch(errorCustomResource(e));
         }
       } else {
@@ -399,7 +401,7 @@ export function createOperator(
       );
       dispatch(operatorCreated(r));
       return true;
-    } catch (e) {
+    } catch (e: any) {
       dispatch(errorOperatorCreate(e));
       return false;
     }
@@ -422,7 +424,7 @@ export function listSubscriptions(
       }
       dispatch(receiveSubscriptions(items));
       return true;
-    } catch (e) {
+    } catch (e: any) {
       dispatch(errorSubscriptionList(e));
       return false;
     }

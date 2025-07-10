@@ -1,7 +1,9 @@
+// Copyright 2020-2023 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
+
 import { get, isEmpty } from "lodash";
 import { IResource, ISecret } from "shared/types";
 import SecretItemDatum from "../ResourceItem/SecretItem/SecretItemDatum";
-
 import "./Secret.css";
 
 function getSecretData(secret: ISecret) {
@@ -12,7 +14,11 @@ function getSecretData(secret: ISecret) {
   return Object.keys(data).map(k => (
     <div key={`cel-${secret.metadata.name}/${k}`} className="secret-table-cel">
       <div className="secret-table-content">
-        <SecretItemDatum key={`${secret.metadata.name}/${k}`} name={k} value={data[k]} />
+        <SecretItemDatum
+          key={`${secret.metadata.name}/${k}`}
+          name={`secret-${k}`}
+          value={data[k]}
+        />
       </div>
     </div>
   ));

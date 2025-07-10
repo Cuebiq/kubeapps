@@ -1,5 +1,8 @@
+// Copyright 2018-2022 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
+
+import { CdsProgressCircle } from "@cds/react/progress-circle";
 import { shallow } from "enzyme";
-import Spinner from "../js/Spinner";
 import LoadingWrapper from "./LoadingWrapper";
 
 let props = {} as any;
@@ -21,31 +24,26 @@ describe("when loaded is false", () => {
     };
   });
 
-  it("matches the snapshot", () => {
-    const wrapper = renderComponent(props);
-    expect(wrapper).toMatchSnapshot();
-  });
-
   it("does not render any children", () => {
-    const wrapper = renderComponent(props);
-    expect(wrapper.find(ChildrenComponent)).not.toExist();
+    const view = renderComponent(props);
+    expect(view.find(ChildrenComponent)).not.toExist();
   });
 
-  it("renders a Spinner", () => {
-    const wrapper = renderComponent(props);
-    expect(wrapper.find(Spinner)).toExist();
+  it("renders a progress circle", () => {
+    const view = renderComponent(props);
+    expect(view.find(CdsProgressCircle)).toExist();
   });
 
-  it("renders a mid size Spinner", () => {
-    const wrapper = renderComponent({ ...props, medium: true });
-    expect(wrapper.find(Spinner)).toExist();
-    expect(wrapper.find(Spinner).prop("medium")).toBe(true);
+  it("renders a mid size progress circle", () => {
+    const view = renderComponent({ ...props, size: "md" });
+    expect(view.find(CdsProgressCircle)).toExist();
+    expect(view.find(CdsProgressCircle).prop("size")).toBe("md");
   });
 
-  it("renders a small Spinner", () => {
-    const wrapper = renderComponent({ ...props, small: true });
-    expect(wrapper.find(Spinner)).toExist();
-    expect(wrapper.find(Spinner).prop("small")).toBe(true);
+  it("renders a small progress circle", () => {
+    const view = renderComponent({ ...props, size: "sm" });
+    expect(view.find(CdsProgressCircle)).toExist();
+    expect(view.find(CdsProgressCircle).prop("size")).toBe("sm");
   });
 });
 
@@ -56,13 +54,8 @@ describe("when loaded is true", () => {
     };
   });
 
-  it("matches the snapshot", () => {
-    const wrapper = renderComponent(props);
-    expect(wrapper).toMatchSnapshot();
-  });
-
   it("renders it wrapped component", () => {
-    const wrapper = renderComponent(props);
-    expect(wrapper.find(ChildrenComponent)).toExist();
+    const view = renderComponent(props);
+    expect(view.find(ChildrenComponent)).toExist();
   });
 });

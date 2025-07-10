@@ -1,99 +1,130 @@
+// Copyright 2021-2022 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
+
 package helm
 
 import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"os"
+	"strings"
 
 	"github.com/containerd/containerd/remotes"
-	"github.com/deislabs/oras/pkg/content"
-	orascontext "github.com/deislabs/oras/pkg/context"
-	"github.com/deislabs/oras/pkg/oras"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
-	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
-	log "github.com/sirupsen/logrus"
+	helmregistry "helm.sh/helm/v3/pkg/registry"
+	log "k8s.io/klog/v2"
+	"oras.land/oras-go/pkg/content"
+	orascontext "oras.land/oras-go/pkg/context"
+	"oras.land/oras-go/pkg/oras"
+	"oras.land/oras-go/pkg/registry"
 )
 
-// Code from Helm Registry Client. Copied here since it belongs to a internal package.
-// TODO: Use helm as a library instead once the code is moved from "internal/experimental".
-// More info at: https://github.com/helm/helm/issues/9275
+type (
+	// ChartPuller interface to pull a chart from an OCI registry
+	ChartPuller interface {
+		PullOCIChart(ociFullName string) (*bytes.Buffer, string, error)
+	}
+
+	// OCIPuller implements ChartPuller
+	OCIPuller struct {
+		Resolver remotes.Resolver
+	}
+)
+
+// Code from Helm Registry Client. Copied here since it belonged to a internal package.
+// TODO(agamez): Some adaptations on the Kubeapps/Helm side are still required to be fully able to
+// use the Helm code a library instead
+// More information:
+// // https://github.com/helm/helm/issues/10623
+// // https://github.com/vmware-tanzu/kubeapps/pull/4154
 //
-// https://github.com/helm/helm/blob/6297c021cbda1483d8c08a8ec6f4a99e38be7302/internal/experimental/registry/util.go
-// ctx retrieves a fresh context.
-// disable verbose logging coming from ORAS (unless debug is enabled)
-func ctx(out io.Writer, debug bool) context.Context {
-	if !debug {
-		return orascontext.Background()
-	}
-	ctx := orascontext.WithLoggerFromWriter(context.Background(), out)
-	orascontext.GetLogger(ctx).Logger.SetLevel(logrus.DebugLevel)
-	return ctx
-}
-
-const (
-	// HelmChartConfigMediaType is the reserved media type for the Helm chart manifest config
-	HelmChartConfigMediaType = "application/vnd.cncf.helm.config.v1+json"
-
-	// HelmChartContentLayerMediaType is the reserved media type for Helm chart package content
-	HelmChartContentLayerMediaType = "application/tar+gzip"
-)
-
-// KnownMediaTypes returns a list of layer mediaTypes that the Helm client knows about
-func KnownMediaTypes() []string {
-	return []string{
-		HelmChartConfigMediaType,
-		HelmChartContentLayerMediaType,
-	}
-}
-
-// ChartPuller interface to pull a chart from an OCI registry
-type ChartPuller interface {
-	PullOCIChart(ociFullName string) (*bytes.Buffer, string, error)
-}
-
-// OCIPuller implements ChartPuller
-type OCIPuller struct {
-	Resolver remotes.Resolver
-}
-
-// PullOCIChart Code from: https://github.com/helm/helm/blob/fee2257e3493e9d06ca6caa4be7ef7660842cbdb/internal/experimental/registry/client.go
-func (p *OCIPuller) PullOCIChart(ociFullName string) (*bytes.Buffer, string, error) {
-	store := content.NewMemoryStore()
-
-	desc, layerDescriptors, err := oras.Pull(ctx(os.Stdout, log.GetLevel() == log.TraceLevel), p.Resolver, ociFullName, store,
-		oras.WithPullEmptyNameAllowed(),
-		oras.WithAllowedMediaTypes(KnownMediaTypes()))
+// This function has been slightly adapted from:
+// https://github.com/helm/helm/blob/v3.8.0/pkg/registry/client.go#L249
+func (p *OCIPuller) PullOCIChart(ref string) (*bytes.Buffer, string, error) {
+	parsedRef, err := parseReference(ref)
 	if err != nil {
 		return nil, "", err
 	}
 
-	numLayers := len(layerDescriptors)
-	if numLayers < 1 {
-		return nil, "", fmt.Errorf("manifest does not contain at least 1 layer (total: %d)", numLayers)
+	memoryStore := content.NewMemory()
+	allowedMediaTypes := []string{
+		helmregistry.ConfigMediaType,
+	}
+	minNumDescriptors := 1 // 1 for the config
+	minNumDescriptors++
+	allowedMediaTypes = append(allowedMediaTypes, helmregistry.ChartLayerMediaType, helmregistry.LegacyChartLayerMediaType)
+
+	var descriptors, layers []ocispec.Descriptor
+	registryStore := content.Registry{Resolver: p.Resolver}
+
+	context := orascontext.WithLoggerFromWriter(context.Background(), os.Stdout)
+	manifest, err := oras.Copy(context, registryStore, parsedRef.String(), memoryStore, "",
+		oras.WithPullEmptyNameAllowed(),
+		oras.WithAllowedMediaTypes(allowedMediaTypes),
+		oras.WithLayerDescriptors(func(l []ocispec.Descriptor) {
+			layers = l
+		}))
+	if err != nil {
+		return nil, "", err
 	}
 
-	var contentLayer *ocispec.Descriptor
-	for _, layer := range layerDescriptors {
-		layer := layer
-		switch layer.MediaType {
-		case HelmChartContentLayerMediaType:
-			contentLayer = &layer
+	descriptors = append(descriptors, manifest)
+	descriptors = append(descriptors, layers...)
+
+	numDescriptors := len(descriptors)
+	if numDescriptors < minNumDescriptors {
+		return nil, "", fmt.Errorf("manifest does not contain minimum number of descriptors (%d), descriptors found: %d",
+			minNumDescriptors, numDescriptors)
+	}
+	var configDescriptor *ocispec.Descriptor
+	var chartDescriptor *ocispec.Descriptor
+	for _, descriptor := range descriptors {
+		d := descriptor
+		switch d.MediaType {
+		case helmregistry.ConfigMediaType:
+			configDescriptor = &d
+		case helmregistry.ChartLayerMediaType:
+			chartDescriptor = &d
+		case helmregistry.LegacyChartLayerMediaType:
+			chartDescriptor = &d
+			log.Infof("Warning: chart media type %s is deprecated\n", helmregistry.LegacyChartLayerMediaType)
 		}
 	}
-
-	if contentLayer == nil {
-		return nil, "", errors.New(
-			fmt.Sprintf("manifest does not contain a layer with mediatype %s",
-				HelmChartContentLayerMediaType))
+	if configDescriptor == nil {
+		return nil, "", fmt.Errorf("could not load config with mediatype %s", helmregistry.ConfigMediaType)
+	}
+	if chartDescriptor == nil {
+		return nil, "", fmt.Errorf("manifest does not contain a layer with mediatype %s",
+			helmregistry.ChartLayerMediaType)
 	}
 
-	_, b, ok := store.Get(*contentLayer)
+	_, chartData, ok := memoryStore.Get(*chartDescriptor)
 	if !ok {
-		return nil, "", errors.Errorf("Unable to retrieve blob with digest %s", contentLayer.Digest)
+		return nil, manifest.Digest.String(), fmt.Errorf("unable to retrieve blob with digest %s", chartDescriptor.Digest)
 	}
 
-	return bytes.NewBuffer(b), desc.Digest.String(), nil
+	return bytes.NewBuffer(chartData), manifest.Digest.String(), nil
+}
+
+// Code from Helm Registry Client. Copied here since it belonged to a internal package.
+// TODO(agamez): Some adaptations on the Kubeapps/Helm side are still required to be fully able to
+// use the Helm code a library instead
+// More information:
+// // https://github.com/helm/helm/issues/10623
+// // https://github.com/vmware-tanzu/kubeapps/pull/4154
+//
+// https://github.com/helm/helm/blob/v3.8.0/pkg/registry/util.go#L112
+func parseReference(raw string) (registry.Reference, error) {
+	parts := strings.Split(raw, ":")
+	if len(parts) > 1 && !strings.Contains(parts[len(parts)-1], "/") {
+		tag := parts[len(parts)-1]
+
+		if tag != "" {
+			// Replace any plus (+) signs with known underscore (_) conversion
+			newTag := strings.ReplaceAll(tag, "+", "_")
+			raw = strings.ReplaceAll(raw, tag, newTag)
+		}
+	}
+	return registry.ParseReference(raw)
 }

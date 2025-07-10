@@ -1,121 +1,98 @@
-# Contributing
+# Contributing to Kubeapps
+
+Kubeapps maintainers welcome contributions from the community and first want to thank you for taking the time to contribute!
+
+Please familiarize yourself with the [Code of Conduct](https://github.com/vmware/.github/blob/main/CODE_OF_CONDUCT.md) before contributing.
+
+- _CLA: Before you start working with Kubeapps, please read and sign our Contributor License Agreement [CLA](https://cla.vmware.com/cla/1/preview). If you wish to contribute code and you have not signed our contributor license agreement (CLA), our bot will update the issue when you open a Pull Request. For any questions about the CLA process, please refer to our [FAQ](https://cla.vmware.com/faq)._
+
+## Ways to contribute
+
+Kubeapps project welcomes many different types of contributions and not all of them need a Pull request. Contributions may include:
+
+- New features and proposals
+- Documentation
+- Bug fixes
+- Issue Triage
+- Answering questions and giving feedback
+- Helping to onboard new contributors
+- Other related activities
+
+## Getting started
+
+Find information about how to set up the development environment on the [developer guide](./site/content/docs/latest/reference/developer/README.md).
+
+## Contribution Flow
+
+This is a rough outline of what a contributor's workflow looks like:
+
+- Make a fork of the repository within your GitHub account
+- Create a topic branch in your fork from where you want to base your work
+- Make commits of logical units
+- Make sure your commit messages are with the proper format, quality and descriptiveness (see below)
+- All commits must be:
+  - Signed using GPG (see [Signing commits in GitHub](https://docs.github.com/en/authentication/managing-commit-signature-verification/signing-commits))
+  - Signed off with the line `Signed-off-by: <Your-Name> <Your-email>`. See [related GitHub blogpost about signing off](https://github.blog/changelog/2022-06-08-admins-can-require-sign-off-on-web-based-commits/).
+    > Note: Signing off on a commit is different than signing a commit, such as with a GPG key.
+- Push your changes to the topic branch in your fork
+- Create a pull request containing that commit
+
+Kubeapps maintainers team follow the GitHub workflow and you can find more details on the [GitHub flow documentation](https://docs.github.com/en/get-started/quickstart/github-flow).
+
+Before submitting your pull request use the following checklist:
+
+### Pull Request Checklist
+
+1. Check if your code changes will pass both code linting checks and unit tests.
+2. Ensure your commit messages are descriptive. Kubeapps follow the conventions on [How to Write a Git Commit Message](http://chris.beams.io/posts/git-commit/). Be sure to include any related GitHub issue references in the commit message. See [GFM syntax](https://guides.github.com/features/mastering-markdown/#GitHub-flavored-markdown) for referencing issues and commits.
+3. Check the commits and commits messages and ensure they are free from typos.
+4. Make sure all the commits have been properly signed with GPG and contain the signoff.
+5. Any pull request which adds a new feature or changes the behavior of any feature which was previously documented should include updates to the documentation. All documentation lives in this repository.
+
+## Reporting Bugs and Creating Issues
+
+For specifics on what to include in your report, please follow the guidelines in the issue and pull request templates when available.
+
+### Issues
+
+Need an idea for a project to get started contributing? Take a look at the [open issues](https://github.com/vmware-tanzu/kubeapps/issues?q=is%3Aopen+is%3Aissue). Also check to see if any open issues are labeled with [`good first issue`](https://github.com/vmware-tanzu/kubeapps/labels/good%20first%20issue) or [`help wanted`](https://github.com/vmware-tanzu/kubeapps/labels/help%20wanted).
 
 When contributing to Kubeapps, please first discuss the change you wish to make via an issue with this repository before making a change.
 
-Please note we have a code of conduct, please follow it in all your interactions with the project.
+> Kubeapps distribution is delegated to the official [Bitnami Kubeapps chart](https://github.com/bitnami/charts/tree/main/bitnami/kubeapps) from the separate Bitnami charts repository. PRs and issues related to the official chart should be created in the Bitnami charts repository.
 
-## Pull Request Process
+### Bugs
 
-1. Ensure any install or build dependencies are removed before the end of the layer when doing a build.
-2. Update the README.md with details of changes to the interface, this includes new environment variables, exposed ports, useful file locations and container parameters.
-3. Increase the version numbers in any examples files and the README.md to the new version that this Pull Request would represent. The versioning scheme we use is [SemVer](http://semver.org/).
-4. You may merge the Pull Request in once you have the sign-off of two other developers, or if you do not have permission to do that, you may request the second reviewer to merge it for you.
+To file a bug report, please first open an [issue](https://github.com/vmware-tanzu/kubeapps/issues/new?assignees=&labels=kind%2Fbug&template=bug_report.md&title=). The project maintainers team will work with you on your bug report.
 
-## DCO Sign off
+Once the bug has been validated, a [pull request](https://github.com/vmware-tanzu/kubeapps/compare) can be opened to fix the bug.
 
-All authors to the project retain copyright to their work. However, to ensure
-that they are only submitting work that they have rights to, we are requiring
-everyone to acknowledge this by signing their work.
+For specifics on what to include in your bug report, please follow the guidelines in the issue and pull request templates.
 
-Any copyright notices in this repo should specify the authors as "the contributors".
+### Features
 
-To sign your work, just add a line like this at the end of your commit message:
+To suggest a feature, please first open an [issue](https://github.com/vmware-tanzu/kubeapps/issues/new?assignees=&labels=kind%2Ffeature&template=feature_request.md&title=) that will be tagged with [`kind/proposal`](https://github.com/vmware-tanzu/kubeapps/labels/kind%2Fproposal), or create a new [Discussion](https://github.com/vmware-tanzu/kubeapps/discussions/new). The project maintainers will work with you on your feature request.
 
-```text
-Signed-off-by: Michael Nelson <minelson@vmware.com>
-```
+Once the feature request has been validated, a pull request can be opened to implement the feature.
 
-This can easily be done with the `--signoff` option to `git commit`.
+For specifics on what to include in your feature request, please follow the guidelines in the issue and pull request templates.
 
-By doing this you state that you can certify the following (from [https://developercertificate.org/](https://developercertificate.org/):
+## Ask for Help
 
-```text
-Developer Certificate of Origin
-Version 1.1
+The best way to reach Kubeapps maintainers team with a question when contributing is to ask on:
 
-Copyright (C) 2004, 2006 The Linux Foundation and its contributors.
-1 Letterman Drive
-Suite D4700
-San Francisco, CA, 94129
+- [GitHub Issues](https://github.com/vmware-tanzu/kubeapps/issues)
+- [GitHub Discussions](https://github.com/vmware-tanzu/kubeapps/discussions)
+- [#kubeapps Slack channel](https://kubernetes.slack.com/messages/kubeapps)
 
-Everyone is permitted to copy and distribute verbatim copies of this
-license document, but changing it is not allowed.
+## Additional Resources
 
+New to Kubeapps?
 
-Developer's Certificate of Origin 1.1
+- Start here to learn how to install and use Kubeapps: [Getting started in Kubeapps](./site/content/docs/latest/tutorials/getting-started.md)
+- Start here to learn how to develop for Kubeapps components: [Kubeapps Developer guidelines](./site/content/docs/latest/reference/developer/README.md)
+- Other more detailed documentation can be found at: [Kubeapps Docs](./site/content/docs/latest/README.md)
 
-By making a contribution to this project, I certify that:
+## Roadmap
 
-(a) The contribution was created in whole or in part by me and I
-    have the right to submit it under the open source license
-    indicated in the file; or
-
-(b) The contribution is based upon previous work that, to the best
-    of my knowledge, is covered under an appropriate open source
-    license and I have the right under that license to submit that
-    work with modifications, whether created in whole or in part
-    by me, under the same open source license (unless I am
-    permitted to submit under a different license), as indicated
-    in the file; or
-
-(c) The contribution was provided directly to me by some other
-    person who certified (a), (b) or (c) and I have not modified
-    it.
-
-(d) I understand and agree that this project and the contribution
-    are public and that a record of the contribution (including all
-    personal information I submit with it, including my sign-off) is
-    maintained indefinitely and may be redistributed consistent with
-    this project or the open source license(s) involved.
-```
-
-## Code of Conduct
-
-### Our Pledge
-
-In the interest of fostering an open and welcoming environment, we as contributors and maintainers pledge to making participation in our project and our community a harassment-free experience for everyone, regardless of age, body size, disability, ethnicity, gender identity and expression, level of experience, nationality, personal appearance, race, religion, or sexual identity and orientation.
-
-### Our Standards
-
-Examples of behavior that contributes to creating a positive environment
-include:
-
-* Using welcoming and inclusive language
-* Being respectful of differing viewpoints and experiences
-* Gracefully accepting constructive criticism
-* Focusing on what is best for the community
-* Showing empathy towards other community members
-
-Examples of unacceptable behavior by participants include:
-
-* The use of sexualized language or imagery and unwelcome sexual attention or
-advances
-* Trolling, insulting/derogatory comments, and personal or political attacks
-* Public or private harassment
-* Publishing others' private information, such as a physical or electronic
-  address, without explicit permission
-* Other conduct which could reasonably be considered inappropriate in a
-  professional setting
-
-### Our Responsibilities
-
-Project maintainers are responsible for clarifying the standards of acceptable behavior and are expected to take appropriate and fair corrective action in response to any instances of unacceptable behavior.
-
-Project maintainers have the right and responsibility to remove, edit, or reject comments, commits, code, wiki edits, issues, and other contributions that are not aligned to this Code of Conduct, or to ban temporarily or permanently any contributor for other behaviors that they deem inappropriate, threatening, offensive, or harmful.
-
-### Scope
-
-This Code of Conduct applies both within project spaces and in public spaces when an individual is representing the project or its community. Examples of representing a project or community include using an official project e-mail address, posting via an official social media account, or acting as an appointed representative at an online or offline event. Representation of a project may be further defined and clarified by project maintainers.
-
-### Enforcement
-
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported by contacting the project team at **ara AT bitnami DOT com**. All complaints will be reviewed and investigated and will result in a response that is deemed necessary and appropriate to the circumstances. The project team is obligated to maintain confidentiality with regard to the reporter of an incident. Further details of specific enforcement policies may be posted separately.
-
-Project maintainers who do not follow or enforce the Code of Conduct in good faith may face temporary or permanent repercussions as determined by other members of the project's leadership.
-
-### Attribution
-
-This Code of Conduct is adapted from the [Contributor Covenant][homepage], version 1.4, available at [http://contributor-covenant.org/version/1/4][version]
-
-[homepage]: http://contributor-covenant.org
-[version]: http://contributor-covenant.org/version/1/4/
+The near-term and mid-term roadmap for the work planned for the project [maintainers](./MAINTAINERS.md) is documented in [ROADMAP.md](./ROADMAP.md).

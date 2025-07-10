@@ -1,23 +1,28 @@
+// Copyright 2019-2023 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
+
 import { CdsIcon } from "@cds/react/icon";
-import { flatten } from "lodash";
-import { get } from "lodash";
+import LoadingWrapper from "components/LoadingWrapper/LoadingWrapper";
+import { filterByResourceRefs } from "containers/helpers";
+import {
+  InstalledPackageDetail,
+  InstalledPackageStatus,
+  InstalledPackageStatus_StatusReason,
+  ResourceRef,
+} from "gen/kubeappsapis/core/packages/v1alpha1/packages_pb";
+import { flatten, get, some } from "lodash";
 import { useEffect, useState } from "react";
 import { PieChart } from "react-minimal-pie-chart";
-
-import LoadingWrapper from "components/LoadingWrapper/LoadingWrapper";
-import ReactTooltip from "react-tooltip";
-import isSomeResourceLoading from "../../components/AppView/helpers";
-import { hapi } from "../../shared/hapi/release";
-import { IK8sList, IKubeItem, IResource } from "../../shared/types";
+import { useSelector } from "react-redux";
+import { Tooltip } from "react-tooltip";
+import { IK8sList, IKubeItem, IResource, IStoreState } from "shared/types";
 import "./ApplicationStatus.css";
 
 interface IApplicationStatusProps {
-  deployments: Array<IKubeItem<IResource | IK8sList<IResource, {}>>>;
-  statefulsets: Array<IKubeItem<IResource | IK8sList<IResource, {}>>>;
-  daemonsets: Array<IKubeItem<IResource | IK8sList<IResource, {}>>>;
-  info?: hapi.release.IInfo;
-  watchWorkloads: () => void;
-  closeWatches: () => void;
+  deployRefs: ResourceRef[];
+  statefulsetRefs: ResourceRef[];
+  daemonsetRefs: ResourceRef[];
+  info?: InstalledPackageDetail;
 }
 
 interface IWorkload {
@@ -41,46 +46,53 @@ function flattenItemList(items: Array<IKubeItem<IResource | IK8sList<IResource, 
   ).filter(r => !!r);
 }
 
-function codeToString(status: hapi.release.IStatus | null | undefined) {
-  // Codes from https://github.com/helm/helm/blob/268695813ba957821e53a784ac849aa3ca7f70a3/_proto/hapi/release/status.proto
+function codeToString(status: InstalledPackageStatus | null | undefined) {
   const codes = {
-    0: "Unknown",
-    1: "Deployed",
-    2: "Deleted",
-    3: "Superseded",
-    4: "Failed",
-    5: "Deleting",
-    6: "Pending Install",
-    7: "Pending Upgrade",
-    8: "Pending Rollback",
+    [InstalledPackageStatus_StatusReason.UNSPECIFIED]: "Unknown",
+    [InstalledPackageStatus_StatusReason.INSTALLED]: "Installed",
+    [InstalledPackageStatus_StatusReason.UNINSTALLED]: "Deleted",
+    [InstalledPackageStatus_StatusReason.FAILED]: "Failed",
+    [InstalledPackageStatus_StatusReason.PENDING]: "Pending",
   };
-  if (status && status.code) {
-    return codes[status.code];
+  let msg = codes[0];
+  if (status && status.reason) {
+    msg = codes[status.reason];
   }
-  return codes[0];
+  return `${msg}${status?.userReason ? " (" + status.userReason + ")" : ""}`;
 }
 
 export default function ApplicationStatus({
-  deployments,
-  statefulsets,
-  daemonsets,
+  deployRefs,
+  statefulsetRefs,
+  daemonsetRefs,
   info,
-  watchWorkloads,
-  closeWatches,
 }: IApplicationStatusProps) {
+  const { kube } = useSelector((state: IStoreState) => state);
+
+  const [deployments, setDeployments] = useState<IKubeItem<IResource | IK8sList<IResource, {}>>[]>(
+    [],
+  );
+  useEffect(() => {
+    setDeployments(filterByResourceRefs(deployRefs, kube.items));
+  }, [deployRefs, kube.items]);
+
+  const [statefulsets, setStatefulsets] = useState<
+    IKubeItem<IResource | IK8sList<IResource, {}>>[]
+  >([]);
+  useEffect(() => {
+    setStatefulsets(filterByResourceRefs(statefulsetRefs, kube.items));
+  }, [statefulsetRefs, kube.items]);
+
+  const [daemonsets, setDaemonsets] = useState<IKubeItem<IResource | IK8sList<IResource, {}>>[]>(
+    [],
+  );
+  useEffect(() => {
+    setDaemonsets(filterByResourceRefs(daemonsetRefs, kube.items));
+  }, [daemonsetRefs, kube.items]);
+
   const [workloads, setWorkloads] = useState([] as IWorkload[]);
   const [totalPods, setTotalPods] = useState(0);
   const [readyPods, setReadyPods] = useState(0);
-
-  useEffect(() => {
-    watchWorkloads();
-    // TODO: Closing websockets before the connection is established
-    // causes a warning. More info at:
-    // https://github.com/kubeapps/kubeapps/issues/2276
-    return function cleanup() {
-      closeWatches();
-    };
-  }, [watchWorkloads, closeWatches]);
 
   useEffect(() => {
     let currentTotalPods = 0;
@@ -130,15 +142,14 @@ export default function ApplicationStatus({
 
   const ready = totalPods === readyPods;
 
-  if (isSomeResourceLoading(deployments.concat(statefulsets).concat(daemonsets))) {
+  if (some(deployments.concat(statefulsets).concat(daemonsets), r => r.isFetching)) {
     return (
-      <div className="center">
-        Loading Status...
-        <LoadingWrapper medium={true} />
+      <div className="status-loading-wrapper margin-t-xl">
+        <LoadingWrapper loadingText="Loading..." size={"md"} />
       </div>
     );
   }
-  if (info && info.deleted) {
+  if (info?.status?.reason === InstalledPackageStatus_StatusReason.UNINSTALLED) {
     return (
       <div className="center">
         <div className="color-icon-danger">
@@ -147,14 +158,20 @@ export default function ApplicationStatus({
       </div>
     );
   }
-  if (info && info.status) {
-    // If the status code is different than "Deployed", display that status
-    const helmStatus = codeToString(info.status);
-    if (helmStatus !== "Deployed") {
+  if (info?.status?.reason) {
+    // If the status code is different than "Deployed" or "Pending",
+    // display that status.
+    const packageStatus = codeToString(info.status);
+    if (
+      ![
+        InstalledPackageStatus_StatusReason.INSTALLED,
+        InstalledPackageStatus_StatusReason.PENDING,
+      ].includes(info?.status?.reason)
+    ) {
       return (
         <div className="center">
           <div className="color-icon-warning">
-            <CdsIcon shape="exclamation-triangle" size="md" solid={true} /> Status: {helmStatus}
+            <CdsIcon shape="exclamation-triangle" size="md" solid={true} /> Status: {packageStatus}
           </div>
         </div>
       );
@@ -171,7 +188,7 @@ export default function ApplicationStatus({
   }
   return (
     <section aria-label="Application status" className="application-status-pie-chart">
-      <div data-tip={true} data-for="application-status">
+      <div data-tooltip-id="tooltip-application-status">
         <h5 className="application-status-pie-chart-title">{ready ? "Ready" : "Not Ready"}</h5>
         <PieChart
           data={[{ value: 1, color: "#0072a3" }]}
@@ -190,7 +207,7 @@ export default function ApplicationStatus({
           <p className="application-status-pie-chart-text">Pod{readyPods > 1 ? "s" : ""}</p>
         </div>
       </div>
-      <ReactTooltip id="application-status" className="extraClass" effect="solid" place="right">
+      <Tooltip id="tooltip-application-status" className="extraClass" place="right">
         <table className="application-status-table">
           <thead>
             <tr>
@@ -211,7 +228,7 @@ export default function ApplicationStatus({
             })}
           </tbody>
         </table>
-      </ReactTooltip>
+      </Tooltip>
     </section>
   );
 }

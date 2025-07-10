@@ -1,99 +1,142 @@
-import LoadingWrapper from "components/LoadingWrapper";
-import { mount } from "enzyme";
-import { createMemoryHistory } from "history";
-import { StaticRouter } from "react-router";
-import { Redirect, RouteComponentProps } from "react-router-dom";
-import NotFound from "../../components/NotFound";
-import { app } from "../../shared/url";
-import Routes from "./Routes";
+// Copyright 2018-2023 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
 
-const emptyRouteComponentProps: RouteComponentProps<{}> = {
-  history: createMemoryHistory(),
-  location: {
-    hash: "",
-    pathname: "",
-    search: "",
-    state: "",
-  },
-  match: {
-    isExact: false,
-    params: {},
-    path: "",
-    url: "",
-  },
-};
+import "@testing-library/jest-dom";
+import { screen } from "@testing-library/react";
+import { IAuthState } from "reducers/auth";
+import { IClusterState } from "reducers/cluster";
+import { renderWithProviders } from "shared/specs/mountWrapper";
+import { IStoreState } from "shared/types";
+import { app } from "shared/url";
+import AppRoutes from "./Routes";
+
+// Mocking SwaggerUI to a simple empty <div> to prevent issues with Jest
+jest.mock("swagger-ui-react", () => {
+  return {
+    SwaggerUI: () => <div />,
+  };
+});
 
 it("invalid path should show a 404 error", () => {
-  const wrapper = mount(
-    <StaticRouter location="/random" context={{}}>
-      <Routes
-        {...emptyRouteComponentProps}
-        cluster={"default"}
-        currentNamespace={"default"}
-        authenticated={true}
-      />
-    </StaticRouter>,
+  renderWithProviders(<AppRoutes />, {
+    preloadedState: {
+      auth: {
+        authenticated: true,
+      },
+    },
+    initialEntries: ["/random"],
+  });
+
+  expect(screen.getByRole("heading")).toHaveTextContent(
+    "The page you are looking for can't be found.",
   );
-  expect(wrapper.find(NotFound)).toExist();
-  expect(wrapper.text()).toContain("The page you are looking for can't be found.");
 });
 
 it("should render a redirect to the default cluster and namespace", () => {
-  const wrapper = mount(
-    <StaticRouter location="/" context={{}}>
-      <Routes
-        {...emptyRouteComponentProps}
-        cluster={"default"}
-        currentNamespace={"default"}
-        authenticated={true}
-      />
-    </StaticRouter>,
+  renderWithProviders(<AppRoutes />, {
+    preloadedState: {
+      auth: {
+        authenticated: true,
+      },
+      clusters: {
+        currentCluster: "default",
+        clusters: {
+          default: {
+            currentNamespace: "default",
+          } as Partial<IClusterState>,
+        },
+      },
+    },
+    initialEntries: ["/"],
+  });
+
+  expect(screen.getByRole("heading")).toHaveTextContent("Applications");
+  expect(screen.getByRole("link", { name: "Deploy" })).toHaveAttribute(
+    "href",
+    "/c/default/ns/default/catalog",
   );
-  expect(wrapper.find(NotFound)).not.toExist();
-  expect(wrapper.find(Redirect).prop("to")).toEqual(app.apps.list("default", "default"));
 });
 
 it("should render a redirect to the login page", () => {
-  const wrapper = mount(
-    <StaticRouter location="/" context={{}}>
-      <Routes
-        {...emptyRouteComponentProps}
-        cluster={""}
-        currentNamespace={""}
-        authenticated={false}
-      />
-    </StaticRouter>,
-  );
-  expect(wrapper.find(NotFound)).not.toExist();
-  expect(wrapper.find(Redirect).prop("to")).toEqual("/login");
+  renderWithProviders(<AppRoutes />, {
+    preloadedState: {
+      auth: {
+        authenticated: false,
+      },
+    },
+    initialEntries: ["/"],
+  });
+
+  expect(screen.getByLabelText("Token")).toHaveAttribute("placeholder", "Paste token here");
 });
 
 it("should render a redirect to the login page (even with cluster or ns info)", () => {
-  const wrapper = mount(
-    <StaticRouter location="/" context={{}}>
-      <Routes
-        {...emptyRouteComponentProps}
-        cluster={"default"}
-        currentNamespace={"default"}
-        authenticated={false}
-      />
-    </StaticRouter>,
-  );
-  expect(wrapper.find(NotFound)).not.toExist();
-  expect(wrapper.find(Redirect).prop("to")).toEqual("/login");
+  renderWithProviders(<AppRoutes />, {
+    preloadedState: {
+      auth: {
+        authenticated: false,
+      } as Partial<IAuthState>,
+      clusters: {
+        currentCluster: "default",
+        clusters: {
+          default: {
+            currentNamespace: "default",
+          } as Partial<IClusterState>,
+        },
+      },
+    } as Partial<IStoreState>,
+    initialEntries: ["/"],
+  });
+
+  expect(screen.getByLabelText("Token")).toHaveAttribute("placeholder", "Paste token here");
 });
 
 it("should render a loading wrapper if authenticated but the cluster and ns info is not populated", () => {
-  const wrapper = mount(
-    <StaticRouter location="/" context={{}}>
-      <Routes
-        {...emptyRouteComponentProps}
-        cluster={""}
-        currentNamespace={""}
-        authenticated={true}
-      />
-    </StaticRouter>,
-  );
-  expect(wrapper.find(NotFound)).not.toExist();
-  expect(wrapper.find(LoadingWrapper)).toExist();
+  renderWithProviders(<AppRoutes />, {
+    preloadedState: {
+      auth: {
+        authenticated: true,
+      },
+    },
+    initialEntries: ["/"],
+  });
+
+  expect(screen.getByText("Fetching Cluster Info...")).toBeInTheDocument();
+});
+
+it("should render a warning message if operators are deactivated", () => {
+  renderWithProviders(<AppRoutes />, {
+    preloadedState: {
+      auth: {
+        authenticated: true,
+      },
+      config: {
+        featureFlags: {
+          operators: false,
+        },
+      },
+    },
+    initialEntries: [`${app.config.operators("default", "default")}/some/path`],
+  });
+  expect(
+    screen.getByText("Operators support has been deactivated", { exact: false }),
+  ).toBeInTheDocument();
+});
+
+it("should route to operators if enabled", () => {
+  renderWithProviders(<AppRoutes />, {
+    preloadedState: {
+      auth: {
+        authenticated: true,
+      },
+      config: {
+        featureFlags: {
+          operators: true,
+        },
+      },
+    },
+    initialEntries: [`${app.config.operators("default", "default")}`],
+  });
+
+  expect(screen.getByText("Fetching Operators...")).toBeInTheDocument();
 });

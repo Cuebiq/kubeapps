@@ -1,8 +1,9 @@
-import { shallow } from "enzyme";
-
-import ResourceRef from "shared/ResourceRef";
+// Copyright 2020-2023 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
 
 import Tabs from "components/Tabs";
+import { shallow } from "enzyme";
+import { ResourceRef } from "gen/kubeappsapis/core/packages/v1alpha1/packages_pb";
 import ResourceTabs from "./ResourceTabs";
 
 const sampleResourceRef = {

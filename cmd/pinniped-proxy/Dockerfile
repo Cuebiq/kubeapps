@@ -1,21 +1,25 @@
-FROM rust:1.49 as builder
+# Copyright 2020-2024 the Kubeapps contributors.
+# SPDX-License-Identifier: Apache-2.0
 
-# Create a new project and build pinniped-proxy dependencies only, so that they
-# are built as a layer on their own, to reduce build times when only our code
-# changes.
-RUN USER=root cargo new --bin pinniped-proxy
+# syntax = docker/dockerfile:1
+
+FROM rust:1.81.0 AS builder
+
 WORKDIR /pinniped-proxy
-COPY ./cmd/pinniped-proxy/Cargo.* ./
-RUN cargo build --release && rm src/*.rs
+ARG VERSION
 
 # Create a release build of pinniped-proxy itself.
-ADD ./cmd/pinniped-proxy ./
-RUN rm ./target/release/deps/pinniped_proxy*
-RUN cargo build --release
+COPY ./cmd/pinniped-proxy ./
+ENV PINNIPED_PROXY_VERSION=$VERSION
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/pinniped-proxy/target \
+    cargo build --release
+RUN --mount=type=cache,target=/pinniped-proxy/target \
+    cp /pinniped-proxy/target/release/pinniped-proxy /pinniped-proxy/pinniped-proxy
 
-FROM bitnami/minideb:buster
-RUN apt-get update && apt-get install -y ca-certificates libssl1.1 && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /pinniped-proxy/target/release/pinniped-proxy /pinniped-proxy
+FROM bitnami/minideb:bookworm
+RUN apt-get update && apt-get install -y ca-certificates libssl3 && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /pinniped-proxy/pinniped-proxy /pinniped-proxy
 ENV PATH="/:$PATH"
 
 EXPOSE 3333

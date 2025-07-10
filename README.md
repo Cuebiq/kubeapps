@@ -1,59 +1,66 @@
-# <img src="./docs/img/logo.png" width="40" align="left"> Kubeapps
+# <img src="site/content/docs/latest/img/logo.svg" width="40" align="left"/> Kubeapps
 
-[![CircleCI](https://circleci.com/gh/kubeapps/kubeapps/tree/master.svg?style=svg)](https://circleci.com/gh/kubeapps/kubeapps/tree/master)
+[![Main Pipeline](https://github.com/vmware-tanzu/kubeapps/actions/workflows/kubeapps-main.yaml/badge.svg)](https://github.com/vmware-tanzu/kubeapps/actions/workflows/kubeapps-main.yaml)
+[![Full Integration Pipeline](https://github.com/vmware-tanzu/kubeapps/actions/workflows/kubeapps-full-integration.yaml/badge.svg)](https://github.com/vmware-tanzu/kubeapps/actions/workflows/kubeapps-full-integration.yaml)
+[![CodeQL](https://github.com/vmware-tanzu/kubeapps/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/vmware-tanzu/kubeapps/actions/workflows/codeql-scheduled.yml)
+[![Netlify Status](https://api.netlify.com/api/v1/badges/7e0e2833-1d75-43f6-b006-632d359bb83b/deploy-status)](https://app.netlify.com/sites/kubeapps-dev/deploys)
 
-Kubeapps is a web-based UI for deploying and managing applications in Kubernetes clusters. Kubeapps allows you to:
+> [!CAUTION]
+> After many years of growth and milestones, the time has come for the next chapter of Kubeapps. The current maintainers are concentrating their efforts on new projects. We are looking for volunteers to help us maintain the project going forward. Without new volunteers, the project will be deprecated and the repo archived on August 8th, 2025.
 
-- Browse and deploy [Helm](https://github.com/helm/helm) charts from chart repositories
-- Inspect, upgrade and delete Helm-based applications installed in the cluster
-- Add custom and private chart repositories (supports [ChartMuseum](https://github.com/helm/chartmuseum) and [JFrog Artifactory](https://www.jfrog.com/confluence/display/RTF/Helm+Chart+Repositories))
-- Browse and deploy [Kubernetes Operators](https://operatorhub.io/).
-- Secure authentication to Kubeapps using an [OAuth2/OIDC provider](./docs/user/using-an-OIDC-provider.md)
-- Secure authorization based on Kubernetes [Role-Based Access Control](./docs/user/access-control.md)
+## Overview
 
-## Quick Start
+Kubeapps is an in-cluster web-based application that enables users with a one-time installation to deploy, manage, and upgrade applications on a Kubernetes cluster.
 
-Use the Helm chart to install the latest version of Kubeapps: 
+With Kubeapps you can:
+
+- Browse and deploy different packages like [Helm](https://github.com/helm/helm) charts, [Flux](https://fluxcd.io/) or [Carvel](https://carvel.dev/) packages from public or private repositories (including [VMware Marketplace™](https://marketplace.cloud.vmware.com) and [Bitnami Application Catalog](https://bitnami.com/application-catalog))
+- Customize deployments through an intuitive user interface
+- Browse, upgrade and delete applications installed in the cluster
+- Browse and deploy [Kubernetes Operators](https://operatorhub.io/)
+- Secure authentication to Kubeapps using a [standalone OAuth2/OIDC provider](./site/content/docs/latest/tutorials/using-an-OIDC-provider.md) or [using Pinniped](./site/content/docs/latest/howto/OIDC/using-an-OIDC-provider-with-pinniped.md)
+- Secure authorization based on Kubernetes [Role-Based Access Control](./site/content/docs/latest/howto/access-control.md)
+
+**_Note:_** Kubeapps 2.0 and onwards supports Helm 3 only. While only the Helm 3 API is supported, in most cases, charts made for Helm 2 will still work.
+
+## Getting started with Kubeapps
+
+Installing Kubeapps is as simple as:
 
 ```bash
-helm repo add bitnami https://charts.bitnami.com/bitnami
 kubectl create namespace kubeapps
-helm install kubeapps --namespace kubeapps bitnami/kubeapps
-``` 
+helm install kubeapps --namespace kubeapps oci://registry-1.docker.io/bitnamicharts/kubeapps
+```
 
-***Note:*** Kubeapps 2.0 and onwards supports Helm 3 only. While only the Helm 3 API is supported, in most cases, charts made for Helm 2 will still work. For detailed instructions on how to install and use Kubeapps follow the [Getting Started Guide](./docs/user/getting-started.md).
+See the [Getting Started Guide](./site/content/docs/latest/tutorials/getting-started.md) for detailed instructions on how to install and use Kubeapps.
 
-## Developer Documentation
+> Kubeapps is deployed using the official [Bitnami Kubeapps chart](https://github.com/bitnami/charts/tree/main/bitnami/kubeapps) from the separate Bitnami charts repository. Although the Kubeapps repository also defines a chart, this is intended for development purposes only.
 
-Please refer to:
+## Documentation
 
-- The [Kubeapps Build Guide](./docs/developer/build.md) for instructions on setting up the build environment and building Kubeapps from source.
-- The [Kubeapps Developer Documentation](./docs/developer/README.md) for instructions on setting up the developer environment for developing on Kubeapps and its components.
+Complete documentation available in Kubeapps [documentation section](./site/content/docs/latest/README.md). Including complete tutorials, how-to guides, and reference for configuration and development in Kubeapps.
 
-## Next Steps
+For getting started into Kubeapps, please refer to:
 
-If you have followed the instructions for [installing Kubeapps](./docs/user/getting-started.md) check how to [use Kubeapps](./docs/user/dashboard.md) to easily manage your applications running in your cluster, or [look under the hood to see what's included in Kubeapps](./docs/architecture/overview.md).
+- [Getting started guide](./site/content/docs/latest/tutorials/getting-started.md)
+- [Detailed installation instructions](./chart/kubeapps/README.md)
+- [Kubeapps user guide](./site/content/docs/latest/howto/dashboard.md) to easily manage your applications running in your cluster.
+- [Kubeapps FAQs](./chart/kubeapps/README.md#faq).
 
-## Useful Resources
+See how to deploy and configure [Kubeapps on VMware Tanzu™ Kubernetes Grid™](./site/content/docs/latest/tutorials/kubeapps-on-tkg/README.md)
 
-- [Walkthrough for first-time users](./docs/user/getting-started.md)
-- [Detailed installation instructions](chart/kubeapps/README.md)
-- [Kubeapps Dashboard documentation](./docs/user/dashboard.md)
-- [Kubeapps components](./docs/architecture/overview.md)
-- [Roadmap](https://github.com/kubeapps/kubeapps/wiki/Roadmap)
+## Troubleshooting
 
-## Differences from Monocular
+If you encounter issues, please review the [troubleshooting docs](./chart/kubeapps/README.md#troubleshooting), review our [project board](https://github.com/orgs/vmware-tanzu/projects/38/views/2), file an [issue](https://github.com/vmware-tanzu/kubeapps/issues), or talk to Kubeapps maintainers on the [#Kubeapps channel](https://kubernetes.slack.com/messages/kubeapps) on the Kubernetes Slack server.
 
-The [Monocular](https://github.com/helm/monocular) project was designed to run a public search and discovery website for Helm repositories (e.g. https://hub.kubeapps.com). Following its 1.0 release, Monocular is focused on delivering the experience for the Helm Hub.
+- [Sign up](https://slack.k8s.io) to the Kubernetes Slack org.
 
-Versions of Monocular 0.7 and older include a basic ability to install, view and delete Helm releases in a Kubernetes cluster. To focus on the Helm Hub experience, these [features have been removed](https://github.com/helm/monocular#looking-for-an-in-cluster-application-management-ui) since the 1.0 release and are no longer supported. We recommend users of Monocular's in-cluster features try Kubeapps as it provides a more featured, robust and secure solution to managing Helm applications in your cluster.
+- Review the FAQs section on the [Kubeapps chart README](./chart/kubeapps/README.md#faq).
 
-## Community
+## Contributing
 
-- [#kubeapps on Kubernetes Slack](https://kubernetes.slack.com/messages/kubeapps)
+If you are ready to jump in and test, add code, or help with documentation, follow the instructions on the [start contributing](./CONTRIBUTING.md) documentation for guidance on how to setup Kubeapps for development.
 
-Click [here](http://slack.k8s.io) to sign up to the Kubernetes Slack org.
+## Changelog
 
-## FAQ
-
-We maintain a section for frequently asked questions on the [Kubeapps chart README](https://github.com/kubeapps/kubeapps/blob/master/chart/kubeapps/README.md#faq).
+Take a look at the list of [releases](https://github.com/vmware-tanzu/kubeapps/releases) to stay tuned for the latest features and changes.

@@ -1,11 +1,13 @@
+// Copyright 2020-2023 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
+
+import LoadingWrapper from "components/LoadingWrapper";
+import { filterByResourceRefs } from "containers/helpers";
+import { ResourceRef } from "gen/kubeappsapis/core/packages/v1alpha1/packages_pb";
 import { isEmpty } from "lodash";
 import { useSelector } from "react-redux";
 import { ISecret, IStoreState } from "shared/types";
-
-import ResourceRef from "shared/ResourceRef";
-import { flattenResources } from "shared/utils";
 import SecretItemDatum from "../ResourceTable/ResourceItem/SecretItem/SecretItemDatum";
-import "./AppSecrets.css";
 
 interface IResourceTableProps {
   secretRefs: ResourceRef[];
@@ -25,15 +27,17 @@ function getSecretData(secret: ISecret) {
 
 function AppSecrets({ secretRefs }: IResourceTableProps) {
   const secrets = useSelector((state: IStoreState) =>
-    flattenResources(secretRefs, state.kube.items),
+    filterByResourceRefs(secretRefs, state.kube.items),
   );
   let content;
-  if (secretRefs.length === 0) {
+  if (secrets.some(s => s.isFetching)) {
+    content = <LoadingWrapper />;
+  } else if (secretRefs.length === 0) {
     content = "The current application does not include secrets";
   } else {
     content = secrets.map(secret => {
       if (secret && secret.item) {
-        const secretItem = secret.item as ISecret;
+        const secretItem = secret.item as unknown as ISecret;
         return getSecretData(secretItem);
       }
       return null;

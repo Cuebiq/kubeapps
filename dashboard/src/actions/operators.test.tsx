@@ -1,9 +1,12 @@
+// Copyright 2020-2022 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
+
 import configureMockStore from "redux-mock-store";
 import thunk from "redux-thunk";
-import { IResource } from "shared/types";
+import { Operators } from "shared/Operators";
+import { IResource, IStoreState } from "shared/types";
 import { getType } from "typesafe-actions";
 import actions from ".";
-import { Operators } from "../shared/Operators";
 
 const { operators: operatorActions } = actions;
 const mockStore = configureMockStore([thunk]);
@@ -11,13 +14,13 @@ const mockStore = configureMockStore([thunk]);
 let store: any;
 
 beforeEach(() => {
-  store = mockStore({});
+  store = mockStore({} as Partial<IStoreState>);
 });
 
-afterEach(jest.resetAllMocks);
+afterEach(jest.restoreAllMocks);
 
 describe("checkOLMInstalled", () => {
-  it("dispatches OLM_INSTALLED when succeded", async () => {
+  it("dispatches OLM_INSTALLED when succeeded", async () => {
     Operators.isOLMInstalled = jest.fn().mockReturnValue(true);
     const expectedActions = [
       {
@@ -87,7 +90,7 @@ describe("getOperators", () => {
 });
 
 describe("getOperator", () => {
-  it("returns an an operator", async () => {
+  it("returns an operator", async () => {
     const op = { metadata: { name: "foo" } };
     Operators.getOperator = jest.fn().mockReturnValue(op);
     const expectedActions = [
@@ -159,7 +162,7 @@ describe("getCSVs", () => {
 });
 
 describe("getCSV", () => {
-  it("returns an an ClusterServiceVersion", async () => {
+  it("returns a ClusterServiceVersion", async () => {
     const csv = { metadata: { name: "foo" } };
     Operators.getCSV = jest.fn().mockReturnValue(csv);
     const expectedActions = [
@@ -267,10 +270,10 @@ describe("updateResource", () => {
   });
 });
 
-describe("getResources", () => {
+describe("listResources", () => {
   it("list resources in a namespace", async () => {
     const csv = {
-      metadata: { name: "foo" },
+      metadata: { name: "foo", namespace: "default" },
       spec: {
         customresourcedefinitions: { owned: [{ name: "foo.kubeapps.com", version: "v1alpha1" }] },
       },
@@ -339,6 +342,43 @@ describe("getResources", () => {
     ];
     await store.dispatch(operatorActions.getResources("default", "default"));
     expect(store.getActions()).toEqual(expectedActions);
+  });
+
+  it("lists resources with their corresponding namespace when empty namespace is requested", async () => {
+    const csvs = [
+      {
+        metadata: { name: "foo", namespace: "foo1-ns" },
+        spec: {
+          customresourcedefinitions: { owned: [{ name: "foo.kubeapps.com", version: "v1alpha1" }] },
+        },
+      },
+      {
+        metadata: { name: "foo", namespace: "foo2-ns" },
+        spec: {
+          customresourcedefinitions: { owned: [{ name: "foo.kubeapps.com", version: "v1alpha1" }] },
+        },
+      },
+    ];
+    Operators.getCSVs = jest.fn().mockReturnValue(csvs);
+
+    const resources = [{ metadata: { name: "resource" } }];
+    Operators.listResources = jest.fn().mockReturnValue({
+      items: resources,
+    });
+    // Request resources for all namespaces
+    await store.dispatch(operatorActions.getResources("default", ""));
+    expect(Operators.listResources).toHaveBeenCalledWith(
+      "default",
+      "foo1-ns",
+      "kubeapps.com/v1alpha1",
+      "foo",
+    );
+    expect(Operators.listResources).toHaveBeenCalledWith(
+      "default",
+      "foo2-ns",
+      "kubeapps.com/v1alpha1",
+      "foo",
+    );
   });
 
   it("ignores csv without owned crds", async () => {

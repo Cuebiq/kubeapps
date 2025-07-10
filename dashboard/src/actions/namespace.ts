@@ -1,18 +1,20 @@
+// Copyright 2018-2023 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
+
 import { ThunkAction } from "redux-thunk";
 import { Kube } from "shared/Kube";
-
+import Namespace, { setStoredNamespace } from "shared/Namespace";
+import { IStoreState } from "shared/types";
 import { ActionType, deprecated } from "typesafe-actions";
-
-import Namespace, { setStoredNamespace } from "../shared/Namespace";
-import { IResource, IStoreState } from "../shared/types";
+import { handleErrorAction } from "./auth";
 
 const { createAction } = deprecated;
 
-export const requestNamespace = createAction("REQUEST_NAMESPACE", resolve => {
+export const requestNamespaceExists = createAction("REQUEST_NAMESPACE", resolve => {
   return (cluster: string, namespace: string) => resolve({ cluster, namespace });
 });
-export const receiveNamespace = createAction("RECEIVE_NAMESPACE", resolve => {
-  return (cluster: string, namespace: IResource) => resolve({ cluster, namespace });
+export const receiveNamespaceExists = createAction("RECEIVE_NAMESPACE", resolve => {
+  return (cluster: string, namespace: string) => resolve({ cluster, namespace });
 });
 
 export const setNamespaceState = createAction("SET_NAMESPACE", resolve => {
@@ -38,8 +40,8 @@ export const setAllowCreate = createAction("ALLOW_CREATE_NAMESPACE", resolve => 
 export const clearClusters = createAction("CLEAR_CLUSTERS");
 
 const allActions = [
-  requestNamespace,
-  receiveNamespace,
+  requestNamespaceExists,
+  receiveNamespaceExists,
   setNamespaceState,
   receiveNamespaces,
   errorNamespaces,
@@ -47,7 +49,7 @@ const allActions = [
   postNamespace,
   setAllowCreate,
 ];
-export type NamespaceAction = ActionType<typeof allActions[number]>;
+export type NamespaceAction = ActionType<(typeof allActions)[number]>;
 
 export function fetchNamespaces(
   cluster: string,
@@ -55,8 +57,7 @@ export function fetchNamespaces(
   return async dispatch => {
     try {
       const namespaceList = await Namespace.list(cluster);
-      const namespaceStrings = namespaceList.namespaces.map((n: IResource) => n.metadata.name);
-      if (namespaceStrings.length === 0) {
+      if (!namespaceList || namespaceList.length === 0) {
         dispatch(
           errorNamespaces(
             cluster,
@@ -66,10 +67,10 @@ export function fetchNamespaces(
         );
         return [];
       }
-      dispatch(receiveNamespaces(cluster, namespaceStrings));
-      return namespaceStrings;
-    } catch (e) {
-      dispatch(errorNamespaces(cluster, e, "list"));
+      dispatch(receiveNamespaces(cluster, namespaceList));
+      return namespaceList;
+    } catch (e: any) {
+      dispatch(handleErrorAction(e, errorNamespaces(cluster, e, "list")));
       return [];
     }
   };
@@ -78,32 +79,35 @@ export function fetchNamespaces(
 export function createNamespace(
   cluster: string,
   ns: string,
+  labels: { [key: string]: string },
 ): ThunkAction<Promise<boolean>, IStoreState, null, NamespaceAction> {
   return async dispatch => {
     try {
-      await Namespace.create(cluster, ns);
+      await Namespace.create(cluster, ns, labels);
       dispatch(postNamespace(cluster, ns));
       dispatch(fetchNamespaces(cluster));
       return true;
-    } catch (e) {
-      dispatch(errorNamespaces(cluster, e, "create"));
+    } catch (e: any) {
+      dispatch(handleErrorAction(e, errorNamespaces(cluster, e, "create")));
       return false;
     }
   };
 }
 
-export function getNamespace(
+export function checkNamespaceExists(
   cluster: string,
   ns: string,
 ): ThunkAction<Promise<boolean>, IStoreState, null, NamespaceAction> {
   return async dispatch => {
     try {
-      dispatch(requestNamespace(cluster, ns));
-      const namespace = await Namespace.get(cluster, ns);
-      dispatch(receiveNamespace(cluster, namespace));
-      return true;
-    } catch (e) {
-      dispatch(errorNamespaces(cluster, e, "get"));
+      dispatch(requestNamespaceExists(cluster, ns));
+      const exists = await Namespace.exists(cluster, ns);
+      if (exists) {
+        dispatch(receiveNamespaceExists(cluster, ns));
+      }
+      return exists;
+    } catch (e: any) {
+      dispatch(handleErrorAction(e, errorNamespaces(cluster, e, "get")));
       return false;
     }
   };
@@ -126,7 +130,7 @@ export function canCreate(
     try {
       const allowed = await Kube.canI(cluster, "", "namespaces", "create", "");
       dispatch(setAllowCreate(cluster, allowed));
-    } catch (e) {
+    } catch (e: any) {
       dispatch(errorNamespaces(cluster, e, "get"));
     }
   };

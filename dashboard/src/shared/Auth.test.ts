@@ -1,23 +1,59 @@
-import Axios, { AxiosResponse } from "axios";
-import * as jwt from "jsonwebtoken";
+// Copyright 2019-2023 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
+
+import { Code } from "@connectrpc/connect";
+import { AxiosResponse } from "axios";
+import { CheckNamespaceExistsResponse } from "gen/kubeappsapis/plugins/resources/v1alpha1/resources_pb";
+import jwt from "jsonwebtoken";
 import { Auth } from "./Auth";
 import { SupportedThemes } from "./Config";
+import { KubeappsGrpcClient } from "./KubeappsGrpcClient";
+import { initialState } from "./specs/mountWrapper";
 
 describe("Auth", () => {
+  // Create a real client, but we'll stub out the function we're interested in.
+  const client = new KubeappsGrpcClient().getResourcesServiceClientImpl();
+  let mockClientCheckNamespaceExists: jest.MockedFunction<typeof client.checkNamespaceExists>;
+
   beforeEach(() => {
-    Axios.get = jest.fn();
+    mockClientCheckNamespaceExists = jest
+      .fn()
+      .mockImplementation(() =>
+        Promise.resolve(new CheckNamespaceExistsResponse({ exists: true })),
+      );
+    jest.spyOn(client, "checkNamespaceExists").mockImplementation(mockClientCheckNamespaceExists);
+    jest.spyOn(Auth, "resourcesServiceClient").mockImplementation(() => client);
   });
   afterEach(() => {
     jest.resetAllMocks();
   });
-  it("should get an URL with the given token", async () => {
-    const mock = jest.fn();
-    Axios.get = mock;
+
+  it("should return without error when the endpoint succeeds with the given token", async () => {
     await Auth.validateToken("othercluster", "foo");
-    expect(mock.mock.calls[0]).toEqual([
-      "api/clusters/othercluster/",
-      { headers: { Authorization: "Bearer foo" } },
-    ]);
+
+    expect(Auth.resourcesServiceClient).toHaveBeenCalledWith("foo");
+    expect(mockClientCheckNamespaceExists).toHaveBeenCalledWith({
+      context: {
+        cluster: "othercluster",
+        namespace: "default",
+      },
+    });
+  });
+
+  it("should return without error when the endpoint returns PermissionDenied with the given token", async () => {
+    mockClientCheckNamespaceExists = jest
+      .fn()
+      .mockImplementation(() => Promise.reject({ code: Code.PermissionDenied }));
+    jest.spyOn(client, "checkNamespaceExists").mockImplementation(mockClientCheckNamespaceExists);
+    await Auth.validateToken("othercluster", "foo");
+
+    expect(Auth.resourcesServiceClient).toHaveBeenCalledWith("foo");
+    expect(mockClientCheckNamespaceExists).toHaveBeenCalledWith({
+      context: {
+        cluster: "othercluster",
+        namespace: "default",
+      },
+    });
   });
 
   describe("when there is an error", () => {
@@ -25,91 +61,107 @@ describe("Auth", () => {
       {
         name: "should throw an invalid token error for 401 responses",
         response: { status: 401, data: "ignored anyway" },
+        grpcCode: Code.Unauthenticated,
         expectedError: new Error("invalid token"),
       },
       {
         name: "should throw a standard error for a 404 response",
-        response: { status: 404, data: "Not found" },
-        expectedError: new Error("404: Not found"),
+        grpcCode: Code.NotFound,
+        expectedError: new Error("not found"),
       },
       {
         name: "should throw a standard error for a 500 response",
-        response: { status: 500, data: "Server exception" },
-        expectedError: new Error("500: Server exception"),
-      },
-      {
-        name: "should succeed for a 403 response",
-        response: { status: 403, data: "Not Allowed" },
-        expectedError: null,
+        grpcCode: Code.Internal,
+        expectedError: new Error("internal error"),
       },
     ].forEach(testCase => {
       it(testCase.name, async () => {
-        const mock = jest.fn(() => {
-          return Promise.reject({ response: testCase.response });
-        });
-        Axios.get = mock;
-        // TODO(absoludity): tried using `expect(fn()).rejects.toThrow()` but it seems we need
-        // to upgrade jest for `toThrow()` to work with async.
-        let err = null;
-        try {
-          await Auth.validateToken("default", "foo");
-        } catch (e) {
-          err = e;
-        } finally {
-          expect(err).toEqual(testCase.expectedError);
-        }
+        mockClientCheckNamespaceExists = jest
+          .fn()
+          .mockImplementation(() => Promise.reject({ code: testCase.grpcCode }));
+        jest
+          .spyOn(client, "checkNamespaceExists")
+          .mockImplementation(mockClientCheckNamespaceExists);
+
+        await expect(Auth.validateToken("default", "foo")).rejects.toThrow(testCase.expectedError);
       });
     });
   });
 
   describe("isAuthenticatedWithCookie", () => {
     it("returns true if request to API root succeeds", async () => {
-      Axios.get = jest.fn().mockReturnValue(Promise.resolve({ headers: { status: 200 } }));
       const isAuthed = await Auth.isAuthenticatedWithCookie("somecluster");
 
-      expect(Axios.get).toBeCalledWith("api/clusters/somecluster/");
+      expect(Auth.resourcesServiceClient).toHaveBeenCalledWith();
+      expect(mockClientCheckNamespaceExists).toHaveBeenCalledWith({
+        context: {
+          cluster: "somecluster",
+          namespace: "default",
+        },
+      });
       expect(isAuthed).toBe(true);
     });
-    it("returns false if the request to api root results in a 403 for an anonymous request", async () => {
-      Axios.get = jest.fn(() => {
-        return Promise.reject({
-          response: {
-            status: 403,
-            data: { message: "Something with system:anonymous in there" },
-          },
-        });
-      });
+
+    it("returns false if the request results in a non-grpc-web response", async () => {
+      mockClientCheckNamespaceExists = jest.fn().mockImplementation(() =>
+        Promise.reject({
+          code: Code.PermissionDenied,
+          metadata: new Headers({
+            "content-type": "not-grpc-content-type",
+          }),
+        }),
+      );
+      jest.spyOn(client, "checkNamespaceExists").mockImplementation(mockClientCheckNamespaceExists);
+
       const isAuthed = await Auth.isAuthenticatedWithCookie("somecluster");
+
       expect(isAuthed).toBe(false);
     });
-    it("returns false if the request to api root results in a non-json response (ie. without data.message)", async () => {
-      Axios.get = jest.fn(() => {
-        return Promise.reject({
-          response: {
-            status: 403,
-          },
-        });
-      });
+
+    it("returns true if the request to api root results in a 403", async () => {
+      mockClientCheckNamespaceExists = jest.fn().mockImplementation(() =>
+        Promise.reject({
+          code: Code.PermissionDenied,
+          metadata: new Headers({
+            "content-type": "application/grpc-web+proto",
+          }),
+        }),
+      );
+      jest.spyOn(client, "checkNamespaceExists").mockImplementation(mockClientCheckNamespaceExists);
+
       const isAuthed = await Auth.isAuthenticatedWithCookie("somecluster");
-      expect(isAuthed).toBe(false);
-    });
-    it("returns true if the request to api root results in a 403 (but not anonymous)", async () => {
-      Axios.get = jest.fn(() => {
-        return Promise.reject({
-          response: {
-            status: 403,
-            data: { message: "some message for other-user" },
-          },
-        });
-      });
-      const isAuthed = await Auth.isAuthenticatedWithCookie("somecluster");
+
       expect(isAuthed).toBe(true);
     });
-    it("should return false if the request results in a 401", async () => {
-      Axios.get = jest.fn(() => {
-        return Promise.reject({ response: { status: 401 } });
-      });
+
+    it("returns true if the request to api root results in a 403 with another grpc protocol", async () => {
+      mockClientCheckNamespaceExists = jest.fn().mockImplementation(() =>
+        Promise.reject({
+          code: Code.PermissionDenied,
+          metadata: new Headers({
+            "content-type": "application/grpc-web+thrift",
+          }),
+        }),
+      );
+      jest.spyOn(client, "checkNamespaceExists").mockImplementation(mockClientCheckNamespaceExists);
+
       const isAuthed = await Auth.isAuthenticatedWithCookie("somecluster");
+
+      expect(isAuthed).toBe(true);
+    });
+    it("returns false if the request results in a 401", async () => {
+      mockClientCheckNamespaceExists = jest.fn().mockImplementation(() =>
+        Promise.reject({
+          code: Code.Unauthenticated,
+          metadata: new Headers({
+            "content-type": "not-grpc-content-type",
+          }),
+        }),
+      );
+      jest.spyOn(client, "checkNamespaceExists").mockImplementation(mockClientCheckNamespaceExists);
+
+      const isAuthed = await Auth.isAuthenticatedWithCookie("somecluster");
+
       expect(isAuthed).toBe(false);
     });
   });
@@ -175,10 +227,18 @@ describe("Auth", () => {
         oauthLogoutURI,
         kubeappsCluster: "default",
         kubeappsNamespace: "ns",
+        helmGlobalNamespace: "ns-global",
+        carvelGlobalNamespace: "kapp-controller-packaging-global",
         appVersion: "2",
         clusters: [],
+        featureFlags: { ...initialState.config.featureFlags },
         authProxySkipLoginPage: false,
         theme: SupportedThemes.light,
+        remoteComponentsUrl: "",
+        customAppViews: [],
+        skipAvailablePackageDetails: false,
+        createNamespaceLabels: {},
+        configuredPlugins: [],
       });
 
       expect(mockedAssign).toBeCalledWith(oauthLogoutURI);
@@ -192,10 +252,18 @@ describe("Auth", () => {
         oauthLogoutURI: "",
         kubeappsCluster: "default",
         kubeappsNamespace: "ns",
+        helmGlobalNamespace: "ns-global",
+        carvelGlobalNamespace: "kapp-controller-packaging-global",
         appVersion: "2",
         clusters: [],
+        featureFlags: { ...initialState.config.featureFlags },
         authProxySkipLoginPage: false,
         theme: SupportedThemes.light,
+        remoteComponentsUrl: "",
+        customAppViews: [],
+        skipAvailablePackageDetails: false,
+        createNamespaceLabels: {},
+        configuredPlugins: [],
       });
 
       expect(mockedAssign).toBeCalledWith("/oauth2/sign_out");
@@ -208,8 +276,7 @@ describe("is403FromAuthProxy", () => {
     expect(
       Auth.is403FromAuthProxy({
         status: 403,
-        data:
-          'namespaces is forbidden: User "system:serviceaccount:kubeapps:kubeapps-internal-kubeops" cannot list resource "namespaces" in API group "" at the cluster scope',
+        data: 'namespaces is forbidden: User "system:serviceaccount:kubeapps:kubeapps-internal-kubeappsapis" cannot list resource "namespaces" in API group "" at the cluster scope',
       } as AxiosResponse<any>),
     ).toBe(false);
   });
@@ -220,8 +287,7 @@ describe("isAnonymous", () => {
     expect(
       Auth.isAnonymous({
         status: 403,
-        data:
-          '{"metadata":{},"status":"Failure","message":"selfsubjectaccessreviews.authorization.k8s.io is forbidden: User "system:anonymous" cannot create resource "selfsubjectaccessreviews" in API group "authorization.k8s.io" at the cluster scope","reason":"Forbidden","details":{"group":"authorization.k8s.io","kind":"selfsubjectaccessreviews"},"code":403} {"namespaces":null}',
+        data: '{"metadata":{},"status":"Failure","message":"selfsubjectaccessreviews.authorization.k8s.io is forbidden: User "system:anonymous" cannot create resource "selfsubjectaccessreviews" in API group "authorization.k8s.io" at the cluster scope","reason":"Forbidden","details":{"group":"authorization.k8s.io","kind":"selfsubjectaccessreviews"},"code":403} {"namespaces":null}',
       } as AxiosResponse<any>),
     ).toBe(true);
   });
@@ -240,8 +306,7 @@ describe("isAnonymous", () => {
     expect(
       Auth.isAnonymous({
         status: 403,
-        data:
-          'namespaces is forbidden: User "system:serviceaccount:kubeapps:kubeapps-internal-kubeops" cannot list resource "namespaces" in API group "" at the cluster scope',
+        data: 'namespaces is forbidden: User "system:serviceaccount:kubeapps:kubeapps-internal-kubeappsapis" cannot list resource "namespaces" in API group "" at the cluster scope',
       } as AxiosResponse<any>),
     ).toBe(false);
   });
@@ -251,7 +316,7 @@ describe("isAnonymous", () => {
         status: 403,
         data: {
           message:
-            'namespaces is forbidden: User "system:serviceaccount:kubeapps:kubeapps-internal-kubeops" cannot list resource "namespaces" in API group "" at the cluster scope',
+            'namespaces is forbidden: User "system:serviceaccount:kubeapps:kubeapps-internal-kubeappsapis" cannot list resource "namespaces" in API group "" at the cluster scope',
         },
       } as AxiosResponse<any>),
     ).toBe(false);

@@ -1,13 +1,14 @@
-import { useEffect, useMemo } from "react";
-import { IKubeItem, IResource, ISecret, IStoreState } from "shared/types";
+// Copyright 2019-2023 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
 
 import { CdsIcon } from "@cds/react/icon";
-import actions from "actions";
-import Table from "components/js/Table";
 import LoadingWrapper from "components/LoadingWrapper/LoadingWrapper";
-import { useDispatch, useSelector } from "react-redux";
-import ResourceRef from "shared/ResourceRef";
-import { flattenResources } from "shared/utils";
+import Table from "components/Table";
+import { filterByResourceRefs } from "containers/helpers";
+import { ResourceRef } from "gen/kubeappsapis/core/packages/v1alpha1/packages_pb";
+import { useMemo } from "react";
+import { useSelector } from "react-redux";
+import { IKubeItem, IResource, ISecret, IStoreState } from "shared/types";
 import { DaemonSetColumns } from "./ResourceData/DaemonSet";
 import { DeploymentColumns } from "./ResourceData/Deployment";
 import { OtherResourceColumns } from "./ResourceData/OtherResource";
@@ -45,11 +46,11 @@ function getData(
   getters: Array<(r: any) => string | JSX.Element | JSX.Element[]>,
   resource?: IKubeItem<IResource | ISecret>,
 ) {
-  const data = {
+  const data: { [index: string]: any } = {
     name,
   };
   if (!resource || resource.isFetching) {
-    data[accessors[1]] = <LoadingWrapper small={true} />;
+    data[accessors[1]] = <LoadingWrapper size={"sm"} />;
     return data;
   }
   if (resource.error) {
@@ -72,16 +73,9 @@ function getData(
 }
 
 function ResourceTable({ id, title, resourceRefs }: IResourceTableProps) {
-  const dispatch = useDispatch();
-  useEffect(() => {
-    resourceRefs.forEach(r => dispatch(actions.kube.getAndWatchResource(r)));
-    return function cleanup() {
-      resourceRefs.forEach(r => dispatch(actions.kube.closeWatchResource(r)));
-    };
-  }, [resourceRefs, dispatch]);
   const resources = useSelector((state: IStoreState) =>
-    flattenResources(resourceRefs, state.kube.items),
-  );
+    filterByResourceRefs(resourceRefs, state.kube.items),
+  ) as IKubeItem<IResource>[];
 
   const columns = useMemo(
     () => (resourceRefs.length ? getColumns(resourceRefs[0]) : OtherResourceColumns),

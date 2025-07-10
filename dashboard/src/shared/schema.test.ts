@@ -1,68 +1,108 @@
-import { JSONSchema4 } from "json-schema";
+// Copyright 2019-2022 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
 
-import { deleteValue, getValue, retrieveBasicFormParams, setValue, validate } from "./schema";
-import { IBasicFormParam } from "./types";
+import { retrieveBasicFormParams, validateValuesSchema } from "./schema";
+import { parseToYamlNode } from "./yamlUtils";
 
 describe("retrieveBasicFormParams", () => {
   [
     {
       description: "should retrieve a param",
       values: "user: andres",
-      schema: { properties: { user: { type: "string", form: true } } } as JSONSchema4,
+      schema: {
+        properties: { user: { type: "string" } },
+      } as any,
       result: [
         {
-          path: "user",
-          value: "andres",
-        } as IBasicFormParam,
+          type: "string",
+          title: "user",
+          key: "user",
+          schema: { type: "string" },
+          hasProperties: false,
+          deployedValue: "",
+          currentValue: "andres",
+        },
       ],
     },
     {
       description: "should retrieve a param without default value",
       values: "user:",
-      schema: { properties: { user: { type: "string", form: true } } } as JSONSchema4,
+      schema: {
+        properties: { user: { type: "string" } },
+      } as any,
       result: [
         {
-          path: "user",
-        } as IBasicFormParam,
+          type: "string",
+
+          title: "user",
+          key: "user",
+          schema: { type: "string" },
+          hasProperties: false,
+          deployedValue: "",
+        },
       ],
     },
     {
       description: "should retrieve a param with default value in the schema",
       values: "user:",
       schema: {
-        properties: { user: { type: "string", form: true, default: "michael" } },
-      } as JSONSchema4,
+        properties: { user: { type: "string", default: "michael" } },
+      } as any,
       result: [
         {
-          path: "user",
-          value: "michael",
-        } as IBasicFormParam,
+          type: "string",
+
+          default: "michael",
+          title: "user",
+          key: "user",
+          schema: { type: "string", default: "michael" },
+          hasProperties: false,
+          deployedValue: "",
+          defaultValue: "michael",
+          currentValue: "michael",
+        },
       ],
     },
     {
       description: "values prevail over default values",
       values: "user: foo",
       schema: {
-        properties: { user: { type: "string", form: true, default: "bar" } },
-      } as JSONSchema4,
+        properties: { user: { type: "string", default: "bar" } },
+      } as any,
       result: [
         {
-          path: "user",
-          value: "foo",
-        } as IBasicFormParam,
+          type: "string",
+
+          default: "bar",
+          title: "user",
+          key: "user",
+          schema: { type: "string", default: "bar" },
+          hasProperties: false,
+          deployedValue: "",
+          defaultValue: "bar",
+          currentValue: "foo",
+        },
       ],
     },
     {
       description: "it should return params even if the values don't include it",
       values: "foo: bar",
       schema: {
-        properties: { user: { type: "string", form: true, default: "andres" } },
-      } as JSONSchema4,
+        properties: { user: { type: "string", default: "andres" } },
+      } as any,
       result: [
         {
-          path: "user",
-          value: "andres",
-        } as IBasicFormParam,
+          type: "string",
+
+          default: "andres",
+          title: "user",
+          key: "user",
+          schema: { type: "string", default: "andres" },
+          hasProperties: false,
+          deployedValue: "",
+          defaultValue: "andres",
+          currentValue: "andres",
+        },
       ],
     },
     {
@@ -72,15 +112,34 @@ describe("retrieveBasicFormParams", () => {
         properties: {
           credentials: {
             type: "object",
-            properties: { user: { type: "string", form: true } },
+            properties: { user: { type: "string" } },
           },
         },
-      } as JSONSchema4,
+      } as any,
       result: [
         {
-          path: "credentials/user",
-          value: "andres",
-        } as IBasicFormParam,
+          type: "object",
+          properties: { user: { type: "string" } },
+          title: "credentials",
+          key: "credentials",
+          schema: { type: "object", properties: { user: { type: "string" } } },
+          hasProperties: true,
+          params: [
+            {
+              type: "string",
+
+              title: "user",
+              key: "credentials/user",
+              schema: { type: "string" },
+              hasProperties: false,
+              deployedValue: "",
+              currentValue: "andres",
+            },
+          ],
+          deployedValue: "",
+          defaultValue: "",
+          currentValue: "",
+        },
       ],
     },
     {
@@ -106,29 +165,110 @@ service: ClusterIP
               admin: {
                 type: "object",
                 properties: {
-                  user: { type: "string", form: true },
-                  pass: { type: "string", form: true },
+                  user: { type: "string" },
+                  pass: { type: "string" },
                 },
               },
             },
           },
-          replicas: { type: "number", form: true },
+          replicas: { type: "number" },
           service: { type: "string" },
         },
-      } as JSONSchema4,
+      } as any,
       result: [
         {
-          path: "credentials/admin/user",
-          value: "andres",
-        } as IBasicFormParam,
+          type: "object",
+          properties: {
+            admin: {
+              type: "object",
+              properties: {
+                user: { type: "string" },
+                pass: { type: "string" },
+              },
+            },
+          },
+          title: "credentials",
+          key: "credentials",
+          schema: {
+            type: "object",
+            properties: {
+              admin: {
+                type: "object",
+                properties: {
+                  user: { type: "string" },
+                  pass: { type: "string" },
+                },
+              },
+            },
+          },
+          hasProperties: true,
+          params: [
+            {
+              type: "object",
+              properties: {
+                user: { type: "string" },
+                pass: { type: "string" },
+              },
+              title: "admin",
+              key: "credentials/admin",
+              schema: {
+                type: "object",
+                properties: {
+                  user: { type: "string" },
+                  pass: { type: "string" },
+                },
+              },
+              hasProperties: true,
+              params: [
+                {
+                  type: "string",
+
+                  title: "user",
+                  key: "credentials/admin/user",
+                  schema: { type: "string" },
+                  hasProperties: false,
+                  deployedValue: "",
+                  currentValue: "andres",
+                },
+                {
+                  type: "string",
+
+                  title: "pass",
+                  key: "credentials/admin/pass",
+                  schema: { type: "string" },
+                  hasProperties: false,
+                  deployedValue: "",
+                  currentValue: "myPassword",
+                },
+              ],
+              deployedValue: "",
+              defaultValue: "",
+              currentValue: "",
+            },
+          ],
+          deployedValue: "",
+          defaultValue: "",
+          currentValue: "",
+        },
         {
-          path: "credentials/admin/pass",
-          value: "myPassword",
-        } as IBasicFormParam,
+          type: "number",
+
+          title: "replicas",
+          key: "replicas",
+          schema: { type: "number" },
+          hasProperties: false,
+          deployedValue: "",
+          currentValue: 1,
+        },
         {
-          path: "replicas",
-          value: 1,
-        } as IBasicFormParam,
+          type: "string",
+          title: "service",
+          key: "service",
+          schema: { type: "string" },
+          hasProperties: false,
+          deployedValue: "",
+          currentValue: "ClusterIP",
+        },
       ],
     },
     {
@@ -138,20 +278,29 @@ service: ClusterIP
         properties: {
           blogName: {
             type: "string",
-            form: true,
+
             title: "Blog Name",
             description: "Title of the blog",
           },
         },
-      } as JSONSchema4,
+      } as any,
       result: [
         {
-          path: "blogName",
           type: "string",
-          value: "myBlog",
+
           title: "Blog Name",
           description: "Title of the blog",
-        } as IBasicFormParam,
+          key: "blogName",
+          schema: {
+            type: "string",
+
+            title: "Blog Name",
+            description: "Title of the blog",
+          },
+          hasProperties: false,
+          deployedValue: "",
+          currentValue: "myBlog",
+        },
       ],
     },
     {
@@ -165,29 +314,59 @@ externalDatabase:
         properties: {
           externalDatabase: {
             type: "object",
-            form: true,
+
             properties: {
-              name: { type: "string", form: true },
-              port: { type: "integer", form: true },
+              name: { type: "string" },
+              port: { type: "integer" },
             },
           },
         },
-      } as JSONSchema4,
+      } as any,
       result: [
         {
-          path: "externalDatabase",
           type: "object",
-          children: [
+
+          properties: {
+            name: { type: "string" },
+            port: { type: "integer" },
+          },
+          title: "externalDatabase",
+          key: "externalDatabase",
+          schema: {
+            type: "object",
+
+            properties: {
+              name: { type: "string" },
+              port: { type: "integer" },
+            },
+          },
+          hasProperties: true,
+          params: [
             {
-              path: "externalDatabase/name",
               type: "string",
+
+              title: "name",
+              key: "externalDatabase/name",
+              schema: { type: "string" },
+              hasProperties: false,
+              deployedValue: "",
+              currentValue: "foo",
             },
             {
-              path: "externalDatabase/port",
               type: "integer",
+
+              title: "port",
+              key: "externalDatabase/port",
+              schema: { type: "integer" },
+              hasProperties: false,
+              deployedValue: "",
+              currentValue: 3306,
             },
           ],
-        } as IBasicFormParam,
+          deployedValue: "",
+          defaultValue: "",
+          currentValue: "",
+        },
       ],
     },
     {
@@ -195,10 +374,21 @@ externalDatabase:
       values: "foo: false",
       schema: {
         properties: {
-          foo: { type: "boolean", form: true },
+          foo: { type: "boolean" },
         },
-      } as JSONSchema4,
-      result: [{ path: "foo", type: "boolean", value: false } as IBasicFormParam],
+      } as any,
+      result: [
+        {
+          type: "boolean",
+
+          title: "foo",
+          key: "foo",
+          schema: { type: "boolean" },
+          hasProperties: false,
+          deployedValue: "",
+          currentValue: false,
+        },
+      ],
     },
     {
       description: "should retrieve a param with enum values",
@@ -207,249 +397,121 @@ externalDatabase:
         properties: {
           databaseType: {
             type: "string",
-            form: true,
+
             enum: ["mariadb", "postgresql"],
           },
         },
-      } as JSONSchema4,
+      } as any,
       result: [
         {
-          path: "databaseType",
           type: "string",
-          value: "postgresql",
+
           enum: ["mariadb", "postgresql"],
-        } as IBasicFormParam,
+          title: "databaseType",
+          key: "databaseType",
+          schema: { type: "string", enum: ["mariadb", "postgresql"] },
+          hasProperties: false,
+          deployedValue: "",
+          currentValue: "postgresql",
+        },
       ],
     },
   ].forEach(t => {
     it(t.description, () => {
-      expect(retrieveBasicFormParams(t.values, t.schema)).toMatchObject(t.result);
+      const result = retrieveBasicFormParams(
+        parseToYamlNode(t.values),
+        parseToYamlNode(""),
+        t.schema,
+        "install",
+      );
+      expect(result).toMatchObject(t.result);
     });
   });
 });
 
-describe("getValue", () => {
-  [
-    {
-      description: "should return a value",
-      values: "foo: bar",
-      path: "foo",
-      result: "bar",
-    },
-    {
-      description: "should return a nested value",
-      values: "foo:\n  bar: foobar",
-      path: "foo/bar",
-      result: "foobar",
-    },
-    {
-      description: "should return a deeply nested value",
-      values: "foo:\n  bar:\n    foobar: barfoo",
-      path: "foo/bar/foobar",
-      result: "barfoo",
-    },
-    {
-      description: "should ignore an invalid path",
-      values: "foo:\n  bar:\n    foobar: barfoo",
-      path: "nope",
-      result: undefined,
-    },
-    {
-      description: "should ignore an invalid path (nested)",
-      values: "foo:\n  bar:\n    foobar: barfoo",
-      path: "not/exists",
-      result: undefined,
-    },
-    {
-      description: "should return the default value if the path is not valid",
-      values: "foo: bar",
-      path: "foobar",
-      default: "BAR",
-      result: "BAR",
-    },
-    {
-      description: "should return a value with slashes in the key",
-      values: "foo/bar: value",
-      path: "foo~1bar",
-      result: "value",
-    },
-    {
-      description: "should return a value with slashes and dots in the key",
-      values: "kubernetes.io/ingress.class: nginx",
-      path: "kubernetes.io~1ingress.class",
-      result: "nginx",
-    },
-  ].forEach(t => {
-    it(t.description, () => {
-      expect(getValue(t.values, t.path, t.default)).toEqual(t.result);
-    });
-  });
-});
-
-describe("setValue", () => {
-  [
-    {
-      description: "should set a value",
-      values: "foo: bar",
-      path: "foo",
-      newValue: "BAR",
-      result: "foo: BAR\n",
-    },
-    {
-      description: "should set a nested value",
-      values: "foo:\n  bar: foobar",
-      path: "foo/bar",
-      newValue: "FOOBAR",
-      result: "foo:\n  bar: FOOBAR\n",
-    },
-    {
-      description: "should set a deeply nested value",
-      values: "foo:\n  bar:\n    foobar: barfoo",
-      path: "foo/bar/foobar",
-      newValue: "BARFOO",
-      result: "foo:\n  bar:\n    foobar: BARFOO\n",
-    },
-    {
-      description: "should add a new value",
-      values: "foo: bar",
-      path: "new",
-      newValue: "value",
-      result: "foo: bar\nnew: value\n",
-    },
-    {
-      description: "should add a new nested value",
-      values: "foo: bar",
-      path: "this/new",
-      newValue: 1,
-      result: "foo: bar\nthis:\n  new: 1\n",
-      error: false,
-    },
-    {
-      description: "should add a new deeply nested value",
-      values: "foo: bar",
-      path: "this/new/value",
-      newValue: 1,
-      result: "foo: bar\nthis:\n  new:\n    value: 1\n",
-      error: false,
-    },
-    {
-      description: "Adding a value for a path partially defined (null)",
-      values: "foo: bar\nthis:\n",
-      path: "this/new/value",
-      newValue: 1,
-      result: "foo: bar\nthis:\n  new:\n    value: 1\n",
-      error: false,
-    },
-    {
-      description: "Adding a value for a path partially defined (object)",
-      values: "foo: bar\nthis: {}\n",
-      path: "this/new/value",
-      newValue: 1,
-      result: "foo: bar\nthis: { new: { value: 1 } }\n",
-      error: false,
-    },
-    {
-      description: "Adding a value in an empty doc",
-      values: "",
-      path: "foo",
-      newValue: "bar",
-      result: "foo: bar\n",
-      error: false,
-    },
-    {
-      description: "should add a value with slashes in the key",
-      values: "foo/bar: test",
-      path: "foo~1bar",
-      newValue: "value",
-      result: "foo/bar: value\n",
-    },
-    {
-      description: "should add a value with slashes and dots in the key",
-      values: "kubernetes.io/ingress.class: default",
-      path: "kubernetes.io~1ingress.class",
-      newValue: "nginx",
-      result: "kubernetes.io/ingress.class: nginx\n",
-    },
-  ].forEach(t => {
-    it(t.description, () => {
-      let res: any;
-      try {
-        res = setValue(t.values, t.path, t.newValue);
-      } catch (e) {
-        expect(t.error).toBe(true);
-      }
-      expect(res).toEqual(t.result);
-    });
-  });
-});
-
-describe("deleteValue", () => {
-  [
-    {
-      description: "should delete a value",
-      values: "foo: bar\nbar: foo\n",
-      path: "bar",
-      result: "foo: bar\n",
-    },
-    {
-      description: "should delete a value from an array",
-      values: `foo:
-  - bar
-  - foobar
-`,
-      path: "foo/0",
-      result: `foo:
-  - foobar
-`,
-    },
-    {
-      description: "should leave the document emtpy",
-      values: "foo: bar",
-      path: "foo",
-      result: "\n",
-    },
-    {
-      description: "noop when trying to delete a missing property",
-      values: "foo: bar\nbar: foo\n",
-      path: "var",
-      result: "foo: bar\nbar: foo\n",
-    },
-  ].forEach(t => {
-    it(t.description, () => {
-      expect(deleteValue(t.values, t.path)).toEqual(t.result);
-    });
-  });
-});
-
-describe("validate", () => {
+describe("validateValuesSchema", () => {
   [
     {
       description: "Should validate a valid object",
       values: "foo: bar\n",
-      schema: { properties: { foo: { type: "string" } } } as JSONSchema4,
+      defaultValues: "foo: default\n",
+      schema: {
+        properties: { foo: { type: "string" } },
+      },
+      valid: true,
+      errors: null,
+    },
+    {
+      description: "Should error if required value not provided",
+      values: "foo: bar\n",
+      defaultValues: "foo: default\n",
+      schema: {
+        required: ["bar"],
+        properties: {
+          foo: { type: "string" },
+          bar: { type: "string" },
+        },
+      },
+      valid: false,
+      errors: [
+        {
+          keyword: "required",
+          instancePath: "",
+          message: "must have required property 'bar'",
+          params: { missingProperty: "bar" },
+          schemaPath: "#/required",
+        },
+      ],
+    },
+    {
+      description: "Should not error if required value has a default",
+      values: "foo: bar\n",
+      defaultValues: "foo: default\nbar: default\n",
+      schema: {
+        required: ["bar"],
+        properties: {
+          foo: { type: "string" },
+          bar: { type: "string" },
+        },
+      },
+      valid: true,
+      errors: null,
+    },
+    {
+      description: "Should not error if extra value not present in defaults is included",
+      values: "foo: bar\nelsewhere: bang",
+      defaultValues: "foo: default\nbar: default\n",
+      schema: {
+        required: ["bar"],
+        properties: {
+          foo: { type: "string" },
+          bar: { type: "string" },
+        },
+      },
       valid: true,
       errors: null,
     },
     {
       description: "Should validate an invalid object",
       values: "foo: bar\n",
-      schema: { properties: { foo: { type: "integer" } } } as JSONSchema4,
+      defaultValues: "foo: 1\n",
+      schema: { properties: { foo: { type: "integer" } } },
       valid: false,
       errors: [
         {
           keyword: "type",
-          dataPath: ".foo",
+          instancePath: "/foo",
           schemaPath: "#/properties/foo/type",
           params: {
             type: "integer",
           },
-          message: "should be integer",
+          message: "must be integer",
         },
       ],
     },
   ].forEach(t => {
     it(t.description, () => {
-      const res = validate(t.values, t.schema);
+      const res = validateValuesSchema(t.values, t.schema, t.defaultValues);
       expect(res.valid).toBe(t.valid);
       expect(res.errors).toEqual(t.errors);
     });

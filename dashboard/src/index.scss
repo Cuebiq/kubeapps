@@ -1,7 +1,9 @@
-@import "~normalize.css/normalize.css";
+// Copyright 2018-2022 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
+
+@import "~modern-normalize/modern-normalize.css";
 @import "~@cds/core/global.css"; // clarity core global styles
 @import "~@cds/core/styles/theme.dark.css"; // clarity core dark theme
-@import "~@cds/core/styles/module.shims.css"; // non-evergreen browser shims
 @import "~@cds/city/css/bundles/default.css"; // load base font
 // clarity UI light/dark themes are loaded by changing <link href=...>, since they aren't prepared for theming
 
@@ -16,10 +18,10 @@ svg.icon {
   font-size: var(--cds-global-typography-font-size-6, 0.55rem);
 }
 
-// CSS tweaks the dark mode theme theme
+// CSS tweaks the dark mode theme
 [cds-theme~="dark"] {
   %convert-to-white {
-    filter: invert(1) brightness(100%) saturate(0%);
+    filter: invert(1) brightness(100%) saturate(0%); /* stylelint-disable-line scss/no-global-function-names */
   }
 
   .section-not-found img {

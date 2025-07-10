@@ -1,15 +1,19 @@
-import Row from "components/js/Row";
+// Copyright 2020-2024 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
+
+import AlertGroup from "components/AlertGroup";
+import Row from "components/Row";
+import { InstalledPackageSummary } from "gen/kubeappsapis/core/packages/v1alpha1/packages_pb";
 import { Link } from "react-router-dom";
-import { IAppOverview, IClusterServiceVersion, IResource } from "../../shared/types";
-import * as url from "../../shared/url";
-import { escapeRegExp } from "../../shared/utils";
-import Alert from "../js/Alert";
+import { IClusterServiceVersion, IResource } from "shared/types";
+import * as url from "shared/url";
+import { escapeRegExp } from "shared/utils";
 import "./AppList.css";
 import AppListItem from "./AppListItem";
 import CustomResourceListItem from "./CustomResourceListItem";
 
 export interface IAppListProps {
-  appList: IAppOverview[] | undefined;
+  appList: InstalledPackageSummary[] | undefined;
   cluster: string;
   namespace: string;
   filter: string;
@@ -21,7 +25,7 @@ export interface IAppListProps {
 function AppListGrid(props: IAppListProps) {
   const { appList, customResources, cluster, namespace, appVersion, filter } = props;
   const filteredReleases = (appList || []).filter(a =>
-    new RegExp(escapeRegExp(filter), "i").test(a.releaseName),
+    new RegExp(escapeRegExp(filter), "i").test(a.name),
   );
   const filteredCRs = customResources.filter(cr =>
     new RegExp(escapeRegExp(filter), "i").test(cr.metadata.name),
@@ -30,13 +34,15 @@ function AppListGrid(props: IAppListProps) {
   if (filteredReleases.length === 0 && filteredCRs.length === 0) {
     return (
       <div className="applist-empty">
-        <Alert>Deploy applications on your Kubernetes cluster with a single click.</Alert>
+        <AlertGroup status="info">
+          Deploy applications on your Kubernetes cluster with a single click.
+        </AlertGroup>
         <h2>Welcome To Kubeapps</h2>
         <p>
           Start browsing your <Link to={url.app.catalog(cluster, namespace)}>favourite apps</Link>{" "}
           or check the{" "}
           <a
-            href={`https://github.com/kubeapps/kubeapps/blob/${appVersion}/docs/user/getting-started.md`}
+            href={`https://github.com/vmware-tanzu/kubeapps/blob/${appVersion}/site/content/docs/latest/tutorials/getting-started.md`}
             target="_blank"
             rel="noopener noreferrer"
           >
@@ -51,16 +57,24 @@ function AppListGrid(props: IAppListProps) {
     <Row>
       <>
         {filteredReleases.map(r => {
-          return <AppListItem key={`${r.namespace}/${r.releaseName}`} app={r} cluster={cluster} />;
+          return (
+            <AppListItem
+              key={`${r.installedPackageRef?.context?.namespace}-${r.installedPackageRef?.identifier}`}
+              app={r}
+              cluster={cluster}
+            />
+          );
         })}
+
         {filteredCRs.map(r => {
+          /* eslint-disable prettier/prettier */
           const csv = props.csvs.find(c =>
             c.spec.customresourcedefinitions.owned?.some(crd => crd.kind === r.kind),
           );
           return (
             <CustomResourceListItem
               cluster={cluster}
-              key={r.metadata.name}
+              key={r.metadata.name + "_" + r.metadata.namespace}
               resource={r}
               csv={csv!}
             />

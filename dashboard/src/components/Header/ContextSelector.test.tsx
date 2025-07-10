@@ -1,51 +1,54 @@
+// Copyright 2020-2023 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
+
 import { CdsButton } from "@cds/react/button";
 import { CdsModal } from "@cds/react/modal";
+import { act, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import actions from "actions";
-import Alert from "components/js/Alert";
+import AlertGroup from "components/AlertGroup";
 import { cloneDeep } from "lodash";
-
-import { act } from "react-dom/test-utils";
 import * as ReactRedux from "react-redux";
 import * as ReactRouter from "react-router";
-import { IClustersState } from "reducers/cluster";
-import { defaultStore, getStore, initialState, mountWrapper } from "shared/specs/mountWrapper";
+import { IClusterState, IClustersState } from "reducers/cluster";
+import {
+  defaultStore,
+  getStore,
+  initialState,
+  mountWrapper,
+  renderWithProviders,
+} from "shared/specs/mountWrapper";
+import { IStoreState } from "shared/types";
 import ContextSelector from "./ContextSelector";
 
 let spyOnUseDispatch: jest.SpyInstance;
-let spyOnUseLocation: jest.SpyInstance;
-let spyOnUseHistory: jest.SpyInstance;
-const kubeaActions = { ...actions.operators };
+let spyOnUseNavigate: jest.SpyInstance;
+const kubeActions = { ...actions.operators };
 beforeEach(() => {
   actions.namespace = {
     ...actions.namespace,
     fetchNamespaces: jest.fn(),
-    getNamespace: jest.fn(),
+    checkNamespaceExists: jest.fn(),
     setNamespace: jest.fn(),
     createNamespace: jest.fn(),
   };
   const mockDispatch = jest.fn(res => res);
   spyOnUseDispatch = jest.spyOn(ReactRedux, "useDispatch").mockReturnValue(mockDispatch);
-  spyOnUseLocation = jest.spyOn(ReactRouter, "useLocation").mockImplementation(() => {
-    return { pathname: "/foo", search: "", state: undefined, hash: "" };
-  });
-  spyOnUseHistory = jest
-    .spyOn(ReactRouter, "useHistory")
-    .mockReturnValue({ push: jest.fn() } as any);
+  spyOnUseNavigate = jest.spyOn(ReactRouter, "useNavigate").mockReturnValue(jest.fn() as any);
 });
 
 afterEach(() => {
-  actions.operators = { ...kubeaActions };
+  actions.operators = { ...kubeActions };
   spyOnUseDispatch.mockRestore();
-  spyOnUseLocation.mockRestore();
-  spyOnUseHistory.mockRestore();
+  spyOnUseNavigate.mockRestore();
 });
 
 it("gets a namespace", () => {
-  const getNamespace = jest.fn();
-  actions.namespace.getNamespace = getNamespace;
+  const checkNamespaceExists = jest.fn();
+  actions.namespace.checkNamespaceExists = checkNamespaceExists;
   mountWrapper(defaultStore, <ContextSelector />);
 
-  expect(getNamespace).toHaveBeenCalledWith(
+  expect(checkNamespaceExists).toHaveBeenCalledWith(
     initialState.clusters.currentCluster,
     initialState.clusters.clusters[initialState.clusters.currentCluster].currentNamespace,
   );
@@ -72,10 +75,12 @@ it("selects a different namespace", () => {
     .findWhere(s => s.prop("name") === "namespaces")
     .simulate("change", { target: { value: "other" } });
   act(() => {
-    (wrapper
-      .find(CdsButton)
-      .filterWhere(b => b.text() === "Change Context")
-      .prop("onClick") as any)();
+    (
+      wrapper
+        .find(CdsButton)
+        .filterWhere(b => b.text() === "Change Context")
+        .prop("onClick") as any
+    )();
   });
   expect(setNamespace).toHaveBeenCalledWith(initialState.clusters.currentCluster, "other");
 });
@@ -96,14 +101,14 @@ it("shows the current cluster", () => {
       },
     },
   } as IClustersState;
-  const wrapper = mountWrapper(getStore({ clusters }), <ContextSelector />);
+  const wrapper = mountWrapper(getStore({ clusters } as Partial<IStoreState>), <ContextSelector />);
   expect(wrapper.find("select").at(0).prop("value")).toBe("bar");
 });
 
 it("shows the current namespace", () => {
   const clusters = cloneDeep(initialState.clusters);
   clusters.clusters[clusters.currentCluster].currentNamespace = "other";
-  const wrapper = mountWrapper(getStore({ clusters }), <ContextSelector />);
+  const wrapper = mountWrapper(getStore({ clusters } as Partial<IStoreState>), <ContextSelector />);
   expect(wrapper.find("select").at(1).prop("value")).toBe("other");
 });
 
@@ -129,14 +134,46 @@ it("submits the form to create a new namespace", () => {
   });
   wrapper.update();
 
-  expect(createNamespace).toHaveBeenCalledWith(initialState.clusters.currentCluster, "new-ns");
+  expect(createNamespace).toHaveBeenCalledWith(initialState.clusters.currentCluster, "new-ns", {});
+});
+
+it("submits the form to create a new namespace with custom labels", () => {
+  const createNamespace = jest.fn();
+  actions.namespace.createNamespace = createNamespace;
+
+  const config = cloneDeep(initialState.config);
+  config.createNamespaceLabels = {
+    "managed-by": "kubeapps",
+  };
+  const wrapper = mountWrapper(getStore({ config } as Partial<IStoreState>), <ContextSelector />);
+
+  const modalButton = wrapper.find(".flat-btn").first();
+  act(() => {
+    (modalButton.prop("onClick") as any)();
+  });
+  wrapper.update();
+  expect(wrapper.find(CdsModal)).toExist();
+
+  act(() => {
+    wrapper.find("input").simulate("change", { target: { value: "new-ns" } });
+  });
+  wrapper.update();
+
+  act(() => {
+    wrapper.find("form").simulate("submit", { preventDefault: jest.fn() });
+  });
+  wrapper.update();
+
+  expect(createNamespace).toHaveBeenCalledWith(initialState.clusters.currentCluster, "new-ns", {
+    "managed-by": "kubeapps",
+  });
 });
 
 it("shows an error creating a namespace", () => {
   const clusters = cloneDeep(initialState.clusters);
   clusters.clusters[clusters.currentCluster].error = { error: new Error("Boom"), action: "create" };
 
-  const wrapper = mountWrapper(getStore({ clusters }), <ContextSelector />);
+  const wrapper = mountWrapper(getStore({ clusters } as Partial<IStoreState>), <ContextSelector />);
 
   const modalButton = wrapper.find(".flat-btn").first();
   act(() => {
@@ -145,7 +182,7 @@ it("shows an error creating a namespace", () => {
   wrapper.update();
 
   // The error will be within the modal
-  expect(wrapper.find(CdsModal).find(Alert)).toExist();
+  expect(wrapper.find(CdsModal).find(AlertGroup)).toExist();
 });
 
 it("disables the create button if not allowed", () => {
@@ -159,76 +196,79 @@ it("disables the create button if not allowed", () => {
       },
     },
   } as IClustersState;
-  const wrapper = mountWrapper(getStore({ clusters }), <ContextSelector />);
+  const wrapper = mountWrapper(getStore({ clusters } as Partial<IStoreState>), <ContextSelector />);
   expect(wrapper.find(".flat-btn").first()).toBeDisabled();
 });
 
-it("changes the location with the new namespace", () => {
-  const push = jest.fn();
-  spyOnUseHistory = jest.spyOn(ReactRouter, "useHistory").mockReturnValue({ push } as any);
-  spyOnUseLocation = jest.spyOn(ReactRouter, "useLocation").mockReturnValue({
-    pathname: "/c/default-cluster/ns/ns-bar/catalog",
-    search: "",
-    state: "",
-  } as any);
-  const wrapper = mountWrapper(defaultStore, <ContextSelector />);
-  wrapper
-    .find("select")
-    .findWhere(s => s.prop("name") === "namespaces")
-    .simulate("change", { target: { value: "other" } });
-  act(() => {
-    (wrapper
-      .find(CdsButton)
-      .filterWhere(b => b.text() === "Change Context")
-      .prop("onClick") as any)();
-  });
-  expect(push).toHaveBeenCalledWith("/c/default-cluster/ns/other/catalog");
+it("disables the change context button if namespace is not loaded yet", () => {
+  const clusters = {
+    currentCluster: "foo",
+    clusters: {
+      foo: {
+        currentNamespace: "default",
+        namespaces: [],
+        canCreateNS: false,
+      },
+    },
+  } as IClustersState;
+  const wrapper = mountWrapper(getStore({ clusters } as Partial<IStoreState>), <ContextSelector />);
+  expect(wrapper.find(CdsButton).filterWhere(b => b.text() === "Change Context")).toBeDisabled();
 });
 
-it("changes the location with the new cluster and namespace", () => {
-  const push = jest.fn();
-  spyOnUseHistory = jest.spyOn(ReactRouter, "useHistory").mockReturnValue({ push } as any);
-  spyOnUseLocation = jest.spyOn(ReactRouter, "useLocation").mockReturnValue({
-    pathname: "/c/default-cluster/ns/ns-bar/catalog",
-    search: "",
-    state: "",
-  } as any);
-  const wrapper = mountWrapper(defaultStore, <ContextSelector />);
-  wrapper
-    .find("select")
-    .findWhere(s => s.prop("name") === "clusters")
-    .simulate("change", { target: { value: "second-cluster" } });
-  wrapper
-    .find("select")
-    .findWhere(s => s.prop("name") === "namespaces")
-    .simulate("change", { target: { value: "other" } });
-  act(() => {
-    (wrapper
-      .find(CdsButton)
-      .filterWhere(b => b.text() === "Change Context")
-      .prop("onClick") as any)();
+it("changes the location with the new namespace", async () => {
+  const navigate = jest.fn();
+  spyOnUseNavigate = jest.spyOn(ReactRouter, "useNavigate").mockReturnValue(navigate as any);
+
+  renderWithProviders(<ContextSelector />, {
+    preloadedState: {
+      clusters: {
+        currentCluster: "default-cluster",
+        clusters: {
+          "default-cluster": {
+            currentNamespace: "default",
+            namespaces: ["default", "ns-bar", "other"],
+          } as Partial<IClusterState>,
+        },
+      } as Partial<IClustersState>,
+    },
+    initialEntries: ["/c/default-cluster/ns/ns-bar/catalog"],
   });
-  expect(push).toHaveBeenCalledWith("/c/second-cluster/ns/other/catalog");
+
+  const select = screen.getByLabelText("Namespace");
+  await userEvent.selectOptions(select, "other");
+  await userEvent.click(screen.getByText("Change Context"));
+
+  expect(navigate).toBeCalledWith("/c/default-cluster/ns/other/catalog");
 });
 
-it("don't call push if the pathname is not recognized", () => {
-  const push = jest.fn();
-  spyOnUseHistory = jest.spyOn(ReactRouter, "useHistory").mockReturnValue({ push } as any);
-  spyOnUseLocation = jest.spyOn(ReactRouter, "useLocation").mockReturnValue({
-    pathname: "/foo",
-    search: "",
-    state: "",
-  } as any);
-  const wrapper = mountWrapper(defaultStore, <ContextSelector />);
-  wrapper
-    .find("select")
-    .findWhere(s => s.prop("name") === "namespaces")
-    .simulate("change", { target: { value: "other" } });
-  act(() => {
-    (wrapper
-      .find(CdsButton)
-      .filterWhere(b => b.text() === "Change Context")
-      .prop("onClick") as any)();
+it("changes the location with the new cluster and namespace", async () => {
+  const navigate = jest.fn();
+  spyOnUseNavigate = jest.spyOn(ReactRouter, "useNavigate").mockReturnValue(navigate as any);
+
+  renderWithProviders(<ContextSelector />, {
+    preloadedState: {
+      clusters: {
+        currentCluster: "default-cluster",
+        clusters: {
+          "default-cluster": {
+            currentNamespace: "default",
+            namespaces: ["default", "ns-bar", "other"],
+          } as Partial<IClusterState>,
+          "other-cluster": {
+            currentNamespace: "default",
+            namespaces: ["default", "ns-bar", "other"],
+          } as Partial<IClusterState>,
+        },
+      } as Partial<IClustersState>,
+    },
+    initialEntries: ["/c/other-cluster/ns/other/catalog"],
   });
-  expect(push).not.toHaveBeenCalled();
+
+  const selectNamespace = screen.getByLabelText("Namespace");
+  const selectCluster = screen.getByLabelText("Cluster");
+  await userEvent.selectOptions(selectCluster, "other-cluster");
+  await userEvent.selectOptions(selectNamespace, "other");
+  await userEvent.click(screen.getByText("Change Context"));
+
+  expect(navigate).toBeCalledWith("/c/other-cluster/ns/other/catalog");
 });

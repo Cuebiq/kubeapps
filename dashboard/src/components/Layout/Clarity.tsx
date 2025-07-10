@@ -1,4 +1,8 @@
+// Copyright 2020-2022 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
+
 import {
+  ClarityIcons as Icons,
   angleIcon,
   applicationsIcon,
   backupRestoreIcon,
@@ -6,7 +10,6 @@ import {
   checkCircleIcon,
   circleArrowIcon,
   circleIcon,
-  ClarityIcons as Icons,
   clusterIcon,
   copyToClipboardIcon,
   deployIcon,
@@ -19,9 +22,12 @@ import {
   heartIcon,
   helpIcon,
   infoCircleIcon,
+  libraryIcon,
+  minusIcon,
   moonIcon,
   networkGlobeIcon,
   plusCircleIcon,
+  plusIcon,
   refreshIcon,
   rewindIcon,
   searchIcon,
@@ -31,9 +37,13 @@ import {
   timesIcon,
   trashIcon,
   uploadCloudIcon,
+  uploadIcon,
 } from "@cds/core/icon";
+import "@cds/core/accordion/register.js";
+import "@cds/core/badge/register.js";
+import "@cds/core/checkbox/register.js";
 import "@cds/core/icon/register.js";
-
+import "@cds/core/range/register.js";
 import "@clr/ui/clr-ui.min.css"; // light clarity UI theme
 
 Icons.addIcons(
@@ -56,9 +66,12 @@ Icons.addIcons(
   heartIcon,
   helpIcon,
   infoCircleIcon,
+  libraryIcon,
+  minusIcon,
   moonIcon,
   networkGlobeIcon,
   plusCircleIcon,
+  plusIcon,
   refreshIcon,
   rewindIcon,
   searchIcon,
@@ -68,7 +81,7 @@ Icons.addIcons(
   timesIcon,
   trashIcon,
   uploadCloudIcon,
-  uploadCloudIcon,
+  uploadIcon,
 );
 const CSSSelector: React.FC = () => null;
 

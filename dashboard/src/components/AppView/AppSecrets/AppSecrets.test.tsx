@@ -1,6 +1,10 @@
-import ResourceRef from "shared/ResourceRef";
-import { defaultStore, getStore, mountWrapper } from "shared/specs/mountWrapper";
-import { ISecret } from "shared/types";
+// Copyright 2020-2023 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
+
+import { keyForResourceRef } from "shared/ResourceRef";
+import { ResourceRef } from "gen/kubeappsapis/core/packages/v1alpha1/packages_pb";
+import { defaultStore, getStore, initialState, mountWrapper } from "shared/specs/mountWrapper";
+import { ISecret, IStoreState } from "shared/types";
 import SecretItemDatum from "../ResourceTable/ResourceItem/SecretItem/SecretItemDatum";
 import AppSecrets from "./AppSecrets";
 
@@ -9,18 +13,10 @@ const defaultProps = {
 };
 
 const sampleResourceRef = {
-  cluster: "cluster-name",
   apiVersion: "v1",
   kind: "Secret",
   name: "foo",
   namespace: "default",
-  filter: "",
-  plural: "secrets",
-  namespaced: true,
-  getResourceURL: jest.fn(() => "secret-foo"),
-  watchResourceURL: jest.fn(),
-  getResource: jest.fn(),
-  watchResource: jest.fn(),
 } as ResourceRef;
 
 const secret = {
@@ -40,16 +36,20 @@ it("shows a message if there are no secrets", () => {
 });
 
 it("renders a secretItemDatum per secret", () => {
+  const key = keyForResourceRef(sampleResourceRef);
   const state = getStore({
+    ...initialState,
     kube: {
+      ...initialState.kube,
       items: {
-        "secret-foo": {
+        ...initialState.kube.items,
+        [key]: {
           isFetching: false,
           item: secret,
         },
       },
     },
-  });
+  } as Partial<IStoreState>);
   const wrapper = mountWrapper(state, <AppSecrets secretRefs={[sampleResourceRef]} />);
   expect(wrapper.find(SecretItemDatum)).toHaveLength(2);
 });

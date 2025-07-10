@@ -1,79 +1,117 @@
-import { RouterAction } from "connected-react-router";
-import * as Moniker from "moniker-native";
-import { useEffect, useState } from "react";
+// Copyright 2018-2023 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
 
-import { JSONSchema4 } from "json-schema";
-import { CreateError, FetchError, IChartState, IChartVersion } from "../../shared/types";
-import * as url from "../../shared/url";
-import DeploymentFormBody from "../DeploymentFormBody/DeploymentFormBody";
-import LoadingWrapper from "../LoadingWrapper/LoadingWrapper";
-
+import { CdsControlMessage, CdsFormGroup } from "@cds/react/forms";
+import { CdsInput } from "@cds/react/input";
+import { CdsSelect } from "@cds/react/select";
 import actions from "actions";
-import ChartSummary from "components/Catalog/ChartSummary";
-import ChartHeader from "components/ChartView/ChartHeader";
-import Alert from "components/js/Alert";
-import Column from "components/js/Column";
-import Row from "components/js/Row";
-import { useDispatch } from "react-redux";
-import "react-tabs/style/react-tabs.css";
+import { handleErrorAction } from "actions/auth";
+import AlertGroup from "components/AlertGroup";
+import AvailablePackageDetailExcerpt from "components/Catalog/AvailablePackageDetailExcerpt";
+import Column from "components/Column";
+import LoadingWrapper from "components/LoadingWrapper";
+import PackageHeader from "components/PackageHeader/PackageHeader";
+import Row from "components/Row";
+import {
+  AvailablePackageReference,
+  ReconciliationOptions,
+} from "gen/kubeappsapis/core/packages/v1alpha1/packages_pb";
+import { Plugin } from "gen/kubeappsapis/core/plugins/v1alpha1/plugins_pb";
+import { usePush } from "hooks/push";
+import React, { useEffect, useRef, useState } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import * as ReactRouter from "react-router-dom";
+import { Action } from "redux";
+import { ThunkDispatch } from "redux-thunk";
+import { Kube } from "shared/Kube";
+import { FetchError, IStoreState } from "shared/types";
+import * as url from "shared/url";
+import { getPluginsAllowingSA, getPluginsRequiringSA, k8sObjectNameRegex } from "shared/utils";
+import DeploymentFormBody from "./DeploymentFormBody";
 
-export interface IDeploymentFormProps {
-  chartNamespace: string;
-  cluster: string;
-  chartID: string;
-  chartVersion: string;
-  error: FetchError | CreateError | undefined;
-  chartsIsFetching: boolean;
-  selected: IChartState["selected"];
-  deployChart: (
-    targetCluster: string,
-    targetNamespace: string,
-    version: IChartVersion,
-    chartNamespace: string,
-    releaseName: string,
-    values?: string,
-    schema?: JSONSchema4,
-  ) => Promise<boolean>;
-  push: (location: string) => RouterAction;
-  fetchChartVersions: (cluster: string, namespace: string, id: string) => Promise<IChartVersion[]>;
-  getChartVersion: (cluster: string, namespace: string, id: string, chartVersion: string) => void;
-  namespace: string;
-  kubeappsNamespace: string;
-}
+export default function DeploymentForm() {
+  const dispatch: ThunkDispatch<IStoreState, null, Action> = useDispatch();
+  const {
+    cluster: targetCluster,
+    namespace: targetNamespace,
+    packageId,
+    pluginName,
+    pluginVersion,
+    packageCluster,
+    packageNamespace,
+    packageVersion,
+  } = ReactRouter.useParams();
+  const {
+    packages: { isFetching: packagesIsFetching, selected: selectedPackage },
+    apps,
+  } = useSelector((state: IStoreState) => state);
 
-function DeploymentForm({
-  chartNamespace,
-  cluster,
-  chartID,
-  chartVersion,
-  error,
-  chartsIsFetching,
-  selected,
-  deployChart,
-  push,
-  fetchChartVersions,
-  namespace,
-  kubeappsNamespace,
-}: IDeploymentFormProps) {
   const [isDeploying, setDeploying] = useState(false);
-  const [releaseName, setReleaseName] = useState(Moniker.choose());
-  const [appValues, setAppValues] = useState(selected.values || "");
+  const [releaseName, setReleaseName] = useState("");
+  const [appValues, setAppValues] = useState(selectedPackage.values || "");
   const [valuesModified, setValuesModified] = useState(false);
-  const { version } = selected;
-  const dispatch = useDispatch();
+  const [serviceAccountList, setServiceAccountList] = useState([] as string[]);
+  const [reconciliationOptions, setReconciliationOptions] = useState({} as ReconciliationOptions);
+  const formRef = useRef<HTMLFormElement>(null);
+
+  const error = apps.error || selectedPackage.error;
+
+  const additionalDefaultValuesNames = Object.keys(
+    selectedPackage.availablePackageDetail?.additionalDefaultValues || {},
+  );
+
+  const [pluginObj] = useState({ name: pluginName, version: pluginVersion } as Plugin);
+
+  const onChangeSA = (e: React.FormEvent<HTMLSelectElement>) => {
+    setReconciliationOptions(
+      new ReconciliationOptions({
+        ...reconciliationOptions,
+        serviceAccountName: e.currentTarget.value,
+      }),
+    );
+  };
+
+  const [packageReference] = useState({
+    context: {
+      cluster: packageCluster,
+      namespace: packageNamespace,
+    },
+    plugin: pluginObj,
+    identifier: packageId,
+  } as AvailablePackageReference);
 
   useEffect(() => {
-    fetchChartVersions(cluster, chartNamespace, chartID);
-  }, [fetchChartVersions, cluster, chartNamespace, chartID]);
+    // Get the package details
+    dispatch(
+      actions.availablepackages.fetchAndSelectAvailablePackageDetail(
+        packageReference,
+        packageVersion,
+      ),
+    );
+    // Populate the rest of packages versions
+    dispatch(actions.availablepackages.fetchAvailablePackageVersions(packageReference));
+    return () => {};
+  }, [dispatch, packageReference, packageVersion]);
+
+  useEffect(() => {
+    // Populate the service account list if the plugin requires it
+    if (getPluginsAllowingSA().includes(pluginObj.name)) {
+      // We assume the user has enough permissions to do that. Fallback to a simple input maybe?
+      Kube.getServiceAccountNames(targetCluster || "", targetNamespace || "")
+        .then(saList => setServiceAccountList(saList.serviceaccountNames))
+        ?.catch(e => {
+          dispatch(handleErrorAction(e));
+        });
+    }
+    return () => {};
+  }, [dispatch, targetCluster, targetNamespace, pluginObj.name]);
 
   useEffect(() => {
     if (!valuesModified) {
-      setAppValues(selected.values || "");
+      setAppValues(selectedPackage.values || "");
     }
-  }, [selected.values, valuesModified]);
-  useEffect(() => {
-    dispatch(actions.charts.getChartVersion(cluster, chartNamespace, chartID, chartVersion));
-  }, [cluster, chartNamespace, chartID, chartVersion, dispatch]);
+    return () => {};
+  }, [selectedPackage.values, valuesModified]);
 
   const handleValuesChange = (value: string) => {
     setAppValues(value);
@@ -83,26 +121,38 @@ function DeploymentForm({
     setValuesModified(true);
   };
 
-  const handleReleaseNameChange = (e: React.FormEvent<HTMLInputElement>) => {
-    setReleaseName(e.currentTarget.value);
+  const handleReleaseNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setReleaseName(e.target.value);
   };
 
+  const push = usePush();
   const handleDeploy = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setDeploying(true);
-    if (selected.version) {
-      const deployed = await deployChart(
-        cluster,
-        namespace,
-        selected.version,
-        chartNamespace,
-        releaseName,
-        appValues,
-        selected.schema,
+    if (selectedPackage.availablePackageDetail) {
+      const deployed = await dispatch(
+        // Installation always happen in the cluster/namespace passed in the URL
+        actions.installedpackages.installPackage(
+          targetCluster || "",
+          targetNamespace || "",
+          selectedPackage.availablePackageDetail,
+          releaseName,
+          appValues,
+          selectedPackage.schema,
+          reconciliationOptions,
+        ),
       );
       setDeploying(false);
       if (deployed) {
-        push(url.app.apps.get(cluster, namespace, releaseName));
+        push(
+          // Redirect to the installed package, note that the cluster/ns are the ones passed
+          // in the URL, not the ones from the package.
+          url.app.apps.get({
+            context: { cluster: targetCluster, namespace: targetNamespace },
+            plugin: pluginObj,
+            identifier: releaseName,
+          } as AvailablePackageReference),
+        );
       }
     }
   };
@@ -110,30 +160,46 @@ function DeploymentForm({
   const selectVersion = (e: React.ChangeEvent<HTMLSelectElement>) => {
     push(
       url.app.apps.new(
-        cluster,
-        namespace,
-        selected.version!,
+        targetCluster || "",
+        targetNamespace || "",
+        packageReference,
         e.currentTarget.value,
-        kubeappsNamespace,
       ),
     );
   };
 
-  if (error && error.constructor === FetchError) {
-    return <Alert theme="danger">Unable to retrieve the current app: {error.message}</Alert>;
+  const onChangeAdditionalDefaultValues = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    dispatch(
+      actions.availablepackages.setAvailablePackageDetailCustomDefaults(e.currentTarget.value),
+    );
+  };
+
+  if (error?.constructor === FetchError) {
+    return (
+      error && (
+        <AlertGroup status="danger">
+          Unable to retrieve the package: {(error as FetchError)?.message}.
+        </AlertGroup>
+      )
+    );
   }
 
-  if (!version) {
-    return <LoadingWrapper />;
+  if (!selectedPackage.availablePackageDetail) {
+    return (
+      <LoadingWrapper
+        className="margin-t-xxl"
+        loadingText={`Fetching ${decodeURIComponent(packageId || "")}...`}
+      />
+    );
   }
-  const chartAttrs = version.relationships.chart.data;
+  /* eslint-disable jsx-a11y/label-has-associated-control */
   return (
     <section>
-      <ChartHeader
-        chartAttrs={chartAttrs}
-        versions={selected.versions}
+      <PackageHeader
+        availablePackageDetail={selectedPackage.availablePackageDetail}
+        versions={selectedPackage.versions}
         onSelect={selectVersion}
-        selectedVersion={selected.version?.attributes.version}
+        selectedVersion={selectedPackage.pkgVersion}
       />
       {isDeploying && (
         <h3 className="center" style={{ marginBottom: "1.2rem" }}>
@@ -143,37 +209,90 @@ function DeploymentForm({
       <LoadingWrapper loaded={!isDeploying}>
         <Row>
           <Column span={3}>
-            <ChartSummary version={version} chartAttrs={chartAttrs} />
+            <AvailablePackageDetailExcerpt pkg={selectedPackage.availablePackageDetail} />
           </Column>
           <Column span={9}>
-            {error && <Alert theme="danger">An error occurred: {error.message}</Alert>}
-            <form onSubmit={handleDeploy}>
-              <div>
-                <label
-                  htmlFor="releaseName"
-                  className="deployment-form-label deployment-form-label-text-param"
-                >
-                  Name
-                </label>
-                <input
-                  id="releaseName"
-                  pattern="[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*"
-                  title="Use lower case alphanumeric characters, '-' or '.'"
-                  className="clr-input deployment-form-text-input"
-                  onChange={handleReleaseNameChange}
-                  value={releaseName}
-                  required={true}
-                />
-              </div>
+            {error && <AlertGroup status="danger">An error occurred: {error.message}.</AlertGroup>}
+            <form onSubmit={handleDeploy} ref={formRef}>
+              <CdsFormGroup
+                validate={true}
+                className="deployment-form"
+                layout="vertical"
+                controlWidth="shrink"
+              >
+                <CdsInput>
+                  <label>Name</label>
+                  <input
+                    id="releaseName"
+                    pattern={k8sObjectNameRegex}
+                    title="Use lowercase alphanumeric characters, '-' or '.'"
+                    onChange={handleReleaseNameChange}
+                    value={releaseName}
+                    required={true}
+                  />
+                  <CdsControlMessage error="valueMissing">
+                    A descriptive name for this application
+                  </CdsControlMessage>
+                </CdsInput>
+                {
+                  // TODO(agamez): let plugins define their own components instead of hardcoding the logic here
+                  getPluginsAllowingSA().includes(pluginObj.name) ? (
+                    <>
+                      <CdsSelect layout="horizontal" id="serviceaccount-selector">
+                        <label>Service Account</label>
+                        <select
+                          value={reconciliationOptions.serviceAccountName}
+                          onChange={onChangeSA}
+                          required={getPluginsRequiringSA().includes(pluginObj.name)}
+                        >
+                          <option key=""></option>
+                          {serviceAccountList?.map(o => (
+                            <option key={o} value={o}>
+                              {o}
+                            </option>
+                          ))}
+                        </select>
+                        <CdsControlMessage error="valueMissing">
+                          The Service Account name this application will be installed with.
+                        </CdsControlMessage>
+                      </CdsSelect>
+                    </>
+                  ) : (
+                    <></>
+                  )
+                }
+                {additionalDefaultValuesNames.length >= 2 ? (
+                  <>
+                    <CdsSelect layout="horizontal" id="defaultValues-selector">
+                      <label>Default values to use</label>
+                      <select onChange={onChangeAdditionalDefaultValues}>
+                        <option key="">Package's values.yaml</option>
+                        {additionalDefaultValuesNames.map(o => (
+                          <option key={o} value={o}>
+                            {o}
+                          </option>
+                        ))}
+                      </select>
+                      <CdsControlMessage error="valueMissing">
+                        This package has multiple default value files to choose from. Select the
+                        defaults that you would like to use.
+                      </CdsControlMessage>
+                    </CdsSelect>
+                  </>
+                ) : (
+                  <></>
+                )}
+              </CdsFormGroup>
               <DeploymentFormBody
                 deploymentEvent="install"
-                chartID={chartID}
-                chartVersion={chartVersion}
-                chartsIsFetching={chartsIsFetching}
-                selected={selected}
+                packageId={packageId || ""}
+                packageVersion={packageVersion!}
+                packagesIsFetching={packagesIsFetching}
+                selected={selectedPackage}
                 setValues={handleValuesChange}
                 appValues={appValues}
                 setValuesModified={setValuesModifiedTrue}
+                formRef={formRef}
               />
             </form>
           </Column>
@@ -182,5 +301,3 @@ function DeploymentForm({
     </section>
   );
 }
-
-export default DeploymentForm;

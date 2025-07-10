@@ -1,42 +1,64 @@
-import { IServiceBroker } from "./ServiceCatalog";
-import { IChartVersion, IRepo } from "./types";
+// Copyright 2018-2023 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
+
+import {
+  AvailablePackageReference,
+  InstalledPackageReference,
+} from "gen/kubeappsapis/core/packages/v1alpha1/packages_pb";
 
 export const app = {
   apps: {
     new: (
       cluster: string,
       namespace: string,
-      cv: IChartVersion,
+      availablePackageReference: AvailablePackageReference,
       version: string,
-      globalNamespace: string,
     ) => {
-      const repoNamespace = cv.relationships.chart.data.repo.namespace;
-      const newSegment = globalNamespace !== repoNamespace ? "new" : "new-from-global";
-      return `/c/${cluster}/ns/${namespace}/apps/${newSegment}/${
-        cv.relationships.chart.data.repo.name
-      }/${encodeURIComponent(cv.relationships.chart.data.name)}/versions/${version}`;
+      const pkgPluginName = availablePackageReference?.plugin?.name;
+      const pkgPluginVersion = availablePackageReference?.plugin?.version;
+      const pkgId = availablePackageReference?.identifier || "";
+      // Some plugins may not be cluster-aware nor support multi-cluster, so
+      // if the returned available package ref doesn't set cluster, use the current
+      // one.
+      const pkgCluster = availablePackageReference?.context?.cluster || cluster;
+      const pkgNamespace = availablePackageReference?.context?.namespace;
+      return `/c/${cluster}/ns/${namespace}/apps/new/${pkgPluginName}/${pkgPluginVersion}/${pkgCluster}/${pkgNamespace}/${encodeURIComponent(
+        pkgId,
+      )}/versions/${version}`;
     },
-    list: (cluster: string, namespace: string) => `/c/${cluster}/ns/${namespace}/apps`,
-    get: (cluster: string, namespace: string, releaseName: string) =>
-      `${app.apps.list(cluster, namespace)}/${releaseName}`,
-    upgrade: (cluster: string, namespace: string, releaseName: string) =>
-      `${app.apps.get(cluster, namespace, releaseName)}/upgrade`,
+    list: (cluster?: string, namespace?: string) => `/c/${cluster}/ns/${namespace}/apps`,
+    get: (installedPackageReference: InstalledPackageReference) => {
+      const pkgCluster = installedPackageReference?.context?.cluster;
+      const pkgNamespace = installedPackageReference?.context?.namespace;
+      const pkgPluginName = installedPackageReference?.plugin?.name;
+      const pkgPluginVersion = installedPackageReference?.plugin?.version;
+      const pkgId = installedPackageReference?.identifier || "";
+      return `${app.apps.list(
+        pkgCluster,
+        pkgNamespace,
+      )}/${pkgPluginName}/${pkgPluginVersion}/${pkgId}`;
+    },
+    upgrade: (ref: InstalledPackageReference) => `${app.apps.get(ref)}/upgrade`,
+    upgradeTo: (ref: InstalledPackageReference, version?: string) =>
+      `${app.apps.get(ref)}/upgrade/${version}`,
   },
   catalog: (cluster: string, namespace: string) => `/c/${cluster}/ns/${namespace}/catalog`,
-  repo: (cluster: string, namespace: string, repo: string) =>
-    `${app.catalog(cluster, namespace)}/${repo}`,
-  servicesInstances: (namespace: string) => `/ns/${namespace}/services/instances`,
-  charts: {
+  packages: {
     get: (
       cluster: string,
       namespace: string,
-      chartName: string,
-      repo: IRepo,
-      globalNamespace: string,
+      availablePackageReference: AvailablePackageReference,
     ) => {
-      const chartsSegment = globalNamespace === repo.namespace ? "global-charts" : "charts";
-      return `/c/${cluster}/ns/${namespace}/${chartsSegment}/${repo.name}/${encodeURIComponent(
-        chartName,
+      const pkgPluginName = availablePackageReference?.plugin?.name;
+      const pkgPluginVersion = availablePackageReference?.plugin?.version;
+      const pkgId = availablePackageReference?.identifier || "";
+      // Some plugins may not be cluster-aware nor support multi-cluster, so
+      // if the returned available package ref doesn't set cluster, use the current
+      // one.
+      const pkgCluster = availablePackageReference?.context?.cluster || cluster;
+      const pkgNamespace = availablePackageReference?.context?.namespace;
+      return `/c/${cluster}/ns/${namespace}/packages/${pkgPluginName}/${pkgPluginVersion}/${pkgCluster}/${pkgNamespace}/${encodeURIComponent(
+        pkgId,
       )}`;
     },
   },
@@ -67,9 +89,8 @@ export const app = {
       `/c/${cluster}/ns/${namespace}/operators-instances/new/${csvName}/${crdName}`,
   },
   config: {
-    apprepositories: (cluster: string, namespace: string) =>
+    pkgrepositories: (cluster: string, namespace: string) =>
       `/c/${cluster}/ns/${namespace}/config/repos`,
-    brokers: (cluster: string) => `/c/${cluster}/config/brokers`,
     operators: (cluster: string, namespace: string) => `/c/${cluster}/ns/${namespace}/operators`,
   },
 };
@@ -78,90 +99,17 @@ function withNS(namespace: string) {
   return namespace ? `namespaces/${namespace}/` : "";
 }
 
-export const backend = {
-  namespaces: {
-    list: (cluster: string) => `api/v1/clusters/${cluster}/namespaces`,
-  },
-  apprepositories: {
-    base: (cluster: string, namespace: string) =>
-      `api/v1/clusters/${cluster}/${withNS(namespace)}apprepositories`,
-    create: (cluster: string, namespace: string) =>
-      backend.apprepositories.base(cluster, namespace),
-    list: (cluster: string, namespace: string) => backend.apprepositories.base(cluster, namespace),
-    validate: (cluster: string) => `${backend.apprepositories.base(cluster, "kubeapps")}/validate`,
-    delete: (cluster: string, namespace: string, name: string) =>
-      `${backend.apprepositories.base(cluster, namespace)}/${name}`,
-    refresh: (cluster: string, namespace: string, name: string) =>
-      `${backend.apprepositories.base(cluster, namespace)}/${name}/refresh`,
-    update: (cluster: string, namespace: string, name: string) =>
-      `${backend.apprepositories.base(cluster, namespace)}/${name}`,
-  },
-  canI: (cluster: string) => `api/v1/clusters/${cluster}/can-i`,
-};
-
-export const kubeops = {
-  releases: {
-    list: (cluster: string, namespace: string) =>
-      `api/kubeops/v1/clusters/${cluster}/namespaces/${namespace}/releases`,
-    listAll: (cluster: string) => `api/kubeops/v1/clusters/${cluster}/releases`,
-    get: (cluster: string, namespace: string, name: string) =>
-      `${kubeops.releases.list(cluster, namespace)}/${name}`,
-  },
-};
-
 export const api = {
-  charts: {
-    base: (cluster: string, namespace: string) =>
-      `api/assetsvc/v1/clusters/${cluster}/namespaces/${namespace}`,
-    get: (cluster: string, namespace: string, id: string) =>
-      `${api.charts.base(cluster, namespace)}/charts/${id}`,
-    getVersion: (cluster: string, namespace: string, id: string, version: string) =>
-      `${api.charts.get(cluster, namespace, id)}/versions/${encodeURIComponent(version)}`,
-    list: (
-      cluster: string,
-      namespace: string,
-      repos: string,
-      page: number,
-      size: number,
-      query?: string,
-    ) =>
-      `${api.charts.base(cluster, namespace)}/charts?page=${page}&size=${size}${
-        query ? "&q=" + query : ""
-      }${repos ? `&repos=${repos}` : ""}`,
-    getChartCategories: (cluster: string, namespace: string) =>
-      `${api.charts.base(cluster, namespace)}/charts/categories`,
-    listVersions: (cluster: string, namespace: string, id: string) =>
-      `${api.charts.get(cluster, namespace, id)}/versions`,
-    getReadme: (cluster: string, namespace: string, id: string, version: string) =>
-      `${api.charts.base(cluster, namespace)}/assets/${id}/versions/${encodeURIComponent(
-        version,
-      )}/README.md`,
-    getValues: (cluster: string, namespace: string, id: string, version: string) =>
-      `${api.charts.base(cluster, namespace)}/assets/${id}/versions/${encodeURIComponent(
-        version,
-      )}/values.yaml`,
-    getSchema: (cluster: string, namespace: string, id: string, version: string) =>
-      `${api.charts.base(cluster, namespace)}/assets/${id}/versions/${encodeURIComponent(
-        version,
-      )}/values.schema.json`,
-  },
-
   // URLs which are accessing the k8s API server directly are grouped together
   // so we can clearly differentiate and possibly begin to remove.
   // Note that this list is not yet exhaustive (search for APIBase to find other call-sites which
   // access the k8s api server directly).
   k8s: {
     base: (cluster: string) => `api/clusters/${cluster}`,
-    namespaces: (cluster: string) => `${api.k8s.base(cluster)}/api/v1/namespaces`,
-    namespace: (cluster: string, namespace: string) =>
-      namespace ? `${api.k8s.namespaces(cluster)}/${namespace}` : `${api.k8s.base(cluster)}/api/v1`,
-    // clusterservicebrokers and operators operate on the default cluster only, currently.
-    clusterservicebrokers: {
-      sync: (cluster: string, broker: IServiceBroker) =>
-        `${api.k8s.base(cluster)}/apis/servicecatalog.k8s.io/v1beta1/clusterservicebrokers/${
-          broker.metadata.name
-        }`,
-    },
+    apis: (cluster: string) => `${api.k8s.base(cluster)}/apis`,
+    v1: (cluster: string) => `${api.k8s.base(cluster)}/api/v1`,
+    groupVersion: (cluster: string, groupVersion: string) =>
+      `${api.k8s.base(cluster)}/apis/${groupVersion}`,
     operators: {
       operators: (cluster: string, namespace: string) =>
         `${api.k8s.base(cluster)}/apis/packages.operators.coreos.com/v1/${withNS(
@@ -202,14 +150,14 @@ export const api = {
           cluster,
         )}/apis/operators.coreos.com/v1alpha1/namespaces/${namespace}/subscriptions/${name}`,
     },
-    secrets: (cluster: string, namespace: string) =>
-      `${api.k8s.namespace(cluster, namespace)}/secrets`,
-    secret: (cluster: string, namespace: string, name: string) =>
-      `${api.k8s.secrets(cluster, namespace)}/${name}`,
   },
 
   operators: {
-    operatorIcon: (cluster: string, namespace: string, name: string) =>
-      `api/v1/clusters/${cluster}/namespaces/${namespace}/operator/${name}/logo`,
+    operatorIcon: (_cluster: string, namespace: string, name: string) =>
+      `apis/operators/namespaces/${namespace}/operator/${name}/logo`,
   },
+
+  kubeappsapis: "apis",
+  config: "config.json",
+  custom_locale: "custom_locale.json",
 };

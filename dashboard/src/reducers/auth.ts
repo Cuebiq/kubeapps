@@ -1,8 +1,10 @@
-import { getType } from "typesafe-actions";
+// Copyright 2018-2022 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
 
+import { Auth } from "shared/Auth";
+import { getType } from "typesafe-actions";
 import actions from "../actions";
 import { AuthAction } from "../actions/auth";
-import { Auth } from "../shared/Auth";
 
 export interface IAuthState {
   sessionExpired: boolean;

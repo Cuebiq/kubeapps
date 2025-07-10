@@ -1,13 +1,15 @@
-import { LOCATION_CHANGE, LocationChangeAction } from "connected-react-router";
-import { getType } from "typesafe-actions";
+// Copyright 2020-2023 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
 
+import { LOCATION_CHANGE, PushAction } from "hooks/push";
+import { Auth } from "shared/Auth";
 import { IConfig } from "shared/Config";
 import { getCurrentNamespace } from "shared/Namespace";
+import { getType } from "typesafe-actions";
 import actions from "../actions";
 import { AuthAction } from "../actions/auth";
 import { ConfigAction } from "../actions/config";
 import { NamespaceAction } from "../actions/namespace";
-import { Auth } from "../shared/Auth";
 
 export interface IClusterState {
   currentNamespace: string;
@@ -42,15 +44,11 @@ export const initialState: IClustersState = getInitialState();
 
 const clusterReducer = (
   state: IClustersState = initialState,
-  action: ConfigAction | NamespaceAction | LocationChangeAction | AuthAction,
+  action: ConfigAction | NamespaceAction | AuthAction | PushAction,
 ): IClustersState => {
   switch (action.type) {
-    case getType(actions.namespace.receiveNamespace):
-      if (
-        !state.clusters[action.payload.cluster].namespaces.includes(
-          action.payload.namespace.metadata.name,
-        )
-      ) {
+    case getType(actions.namespace.receiveNamespaceExists): {
+      if (!state.clusters[action.payload.cluster].namespaces.includes(action.payload.namespace)) {
         return {
           ...state,
           clusters: {
@@ -58,7 +56,7 @@ const clusterReducer = (
             [action.payload.cluster]: {
               ...state.clusters[action.payload.cluster],
               namespaces: state.clusters[action.payload.cluster].namespaces
-                .concat(action.payload.namespace.metadata.name)
+                .concat(action.payload.namespace)
                 .sort(),
               error: undefined,
             },
@@ -66,7 +64,8 @@ const clusterReducer = (
         };
       }
       return state;
-    case getType(actions.namespace.receiveNamespaces):
+    }
+    case getType(actions.namespace.receiveNamespaces): {
       return {
         ...state,
         clusters: {
@@ -83,7 +82,8 @@ const clusterReducer = (
           },
         },
       };
-    case getType(actions.namespace.setNamespaceState):
+    }
+    case getType(actions.namespace.setNamespaceState): {
       return {
         ...state,
         currentCluster: action.payload.cluster,
@@ -96,7 +96,8 @@ const clusterReducer = (
           },
         },
       };
-    case getType(actions.namespace.errorNamespaces):
+    }
+    case getType(actions.namespace.errorNamespaces): {
       return {
         ...state,
         clusters: {
@@ -107,14 +108,16 @@ const clusterReducer = (
           },
         },
       };
-    case getType(actions.namespace.clearClusters):
+    }
+    case getType(actions.namespace.clearClusters): {
       return {
         ...state,
         clusters: {
           ...initialState.clusters,
         },
       };
-    case getType(actions.namespace.setAllowCreate):
+    }
+    case getType(actions.namespace.setAllowCreate): {
       return {
         ...state,
         clusters: {
@@ -125,7 +128,8 @@ const clusterReducer = (
           },
         },
       };
-    case LOCATION_CHANGE:
+    }
+    case LOCATION_CHANGE: {
       const pathname = action.payload.location.pathname;
       // looks for either or both of /c/:cluster and /ns/:namespace in URL
       const matches = pathname.match(/(?:\/c\/(?<cluster>[^/]*))?(?:\/ns\/(?<namespace>[^/]*))?/);
@@ -146,7 +150,8 @@ const clusterReducer = (
         };
       }
       break;
-    case getType(actions.config.receiveConfig):
+    }
+    case getType(actions.config.receiveConfig): {
       // Initialize the clusters when receiving the config.
       const config = action.payload as IConfig;
       const clusters: IClustersMap = {};
@@ -163,6 +168,7 @@ const clusterReducer = (
         currentCluster: config.clusters[0],
         clusters,
       };
+    }
     default:
   }
   return state;

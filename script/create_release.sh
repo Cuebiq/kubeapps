@@ -1,28 +1,21 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
 
-TAG=${1:?}
+# Copyright 2021-2022 the Kubeapps contributors.
+# SPDX-License-Identifier: Apache-2.0
 
-PROJECT_DIR=$(cd $(dirname $0)/.. && pwd)
+set -o errexit
+set -o nounset
+set -o pipefail
 
-source $(dirname $0)/release_utils.sh
+source "$(dirname "$0")/chart_sync_utils.sh"
 
-if [[ -z "$REPO_NAME" || -z "$REPO_DOMAIN" ]]; then
-  echo "Github repository not specified" > /dev/stderr
+TAG=${1:?Missing tag}
+KUBEAPPS_REPO=${2:?Missing kubeapps repo}
+GH_TOKEN=${GH_TOKEN:?Missing GitHub token}
+
+if [[ -z "${TAG}" ]]; then
+  echo "A git tag is required for creating a release"
   exit 1
 fi
 
-if [[ -z "$ACCESS_TOKEN" ]]; then
-  echo "Unable to release: Github Token not specified" > /dev/stderr
-  exit 1
-fi
-
-repo_check=`curl -H "Authorization: token $ACCESS_TOKEN" -s https://api.github.com/repos/$REPO_DOMAIN/$REPO_NAME`
-if [[ $repo_check == *"Not Found"* ]]; then
-  echo "Not found a Github repository for $REPO_DOMAIN/$REPO_NAME, it is not possible to publish it" > /dev/stderr
-  exit 1
-else
-  RELEASE_ID=$(release_tag $TAG $REPO_DOMAIN $REPO_NAME | jq '.id') 
-fi
-
-echo "RELEASE ID: $RELEASE_ID"
+gh release create -R "${KUBEAPPS_REPO}" -d "${TAG}" -t "${TAG}" -F "${RELEASE_NOTES_TEMPLATE_FILE}"

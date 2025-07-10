@@ -1,4 +1,7 @@
-import Alert from "components/js/Alert";
+// Copyright 2020-2023 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
+
+import AlertGroup from "components/AlertGroup";
 import LoadingWrapper from "components/LoadingWrapper/LoadingWrapper";
 import CapabiliyLevel, { BASIC_INSTALL } from "components/OperatorView/OperatorCapabilityLevel";
 import { get } from "lodash";
@@ -10,7 +13,7 @@ import "./CapabilityLevel.css";
 export default function OperatorSummary() {
   const { operator, isFetching, csv } = useSelector((state: IStoreState) => state.operators);
   if (isFetching || (!operator && !csv)) {
-    return <LoadingWrapper />;
+    return <LoadingWrapper className="margin-t-xxl" loadingText="Fetching Operator info..." />;
   }
   let capabilityLevel = "";
   let repository = "";
@@ -21,10 +24,10 @@ export default function OperatorSummary() {
     const channel = Operators.getDefaultChannel(operator);
     if (!channel || !channel.currentCSVDesc) {
       return (
-        <Alert theme="danger">
+        <AlertGroup status="danger">
           Operator {operator.metadata.name} doesn't define a valid channel. This is needed to
           extract required info.
-        </Alert>
+        </AlertGroup>
       );
     }
     const { currentCSVDesc } = channel;
@@ -42,19 +45,15 @@ export default function OperatorSummary() {
   }
   return (
     <div className="left-menu">
-      <section className="left-menu-subsection" aria-labelledby="chartinfo-versions">
-        <h5 className="left-menu-subsection-title" id="chartinfo-versions">
-          Capability Level
-        </h5>
+      <section className="left-menu-subsection" aria-labelledby="operatorinfo-capacitylevel">
+        <h5 className="left-menu-subsection-title">Capability Level</h5>
         <div>
           <CapabiliyLevel level={capabilityLevel} />
         </div>
       </section>
       {repository && (
-        <section className="left-menu-subsection" aria-labelledby="chartinfo-versions">
-          <h5 className="left-menu-subsection-title" id="chartinfo-versions">
-            Repository
-          </h5>
+        <section className="left-menu-subsection" aria-labelledby="operatorinfo-repository">
+          <h5 className="left-menu-subsection-title">Repository</h5>
           <div>
             <a href={repository} target="_blank" rel="noopener noreferrer">
               {repository}
@@ -63,30 +62,24 @@ export default function OperatorSummary() {
         </section>
       )}
       {provider && (
-        <section className="left-menu-subsection" aria-labelledby="chartinfo-versions">
-          <h5 className="left-menu-subsection-title" id="chartinfo-versions">
-            Provider
-          </h5>
+        <section className="left-menu-subsection" aria-labelledby="operatorinfo-provider">
+          <h5 className="left-menu-subsection-title">Provider</h5>
           <div>
             <span>{provider}</span>
           </div>
         </section>
       )}
       {containerImage && (
-        <section className="left-menu-subsection" aria-labelledby="chartinfo-versions">
-          <h5 className="left-menu-subsection-title" id="chartinfo-versions">
-            Container Image
-          </h5>
+        <section className="left-menu-subsection" aria-labelledby="operatorinfo-containerimgae">
+          <h5 className="left-menu-subsection-title">Container Image</h5>
           <div>
             <span>{containerImage}</span>
           </div>
         </section>
       )}
       {createdAt && (
-        <section className="left-menu-subsection" aria-labelledby="chartinfo-versions">
-          <h5 className="left-menu-subsection-title" id="chartinfo-versions">
-            Created At
-          </h5>
+        <section className="left-menu-subsection" aria-labelledby="operatorinfo-createdat">
+          <h5 className="left-menu-subsection-title">Created At</h5>
           <div>
             <span>{createdAt}</span>
           </div>

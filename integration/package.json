@@ -1,20 +1,19 @@
 {
   "name": "kubeapps-integration",
-  "version": "1.0.0",
+  "license": "Apache-2.0",
+  "version": "2.0.0",
   "description": "Kubeapps integration tests",
   "main": "index.js",
   "private": true,
   "scripts": {
-    "start": "jest --runInBand --ci --colors",
-    "start:window": "INTEGRATION_HEADLESS=false jest --runInBand"
+    "prettier": "prettier --write './**/*.{js, json}'",
+    "test": "playwright test --workers=1"
   },
   "dependencies": {
-    "axios": "^0.21.1",
-    "expect-puppeteer": "^4.3.0",
-    "jest": "^26.0.0",
-    "jest-circus": "^24.9.0",
-    "jest-puppeteer": "^4.3.0",
-    "puppeteer": "^1.20.0",
-    "wait-on": "^3.3.0"
+    "@playwright/test": "^1.46.0",
+    "axios": "^1.7.3"
+  },
+  "devDependencies": {
+    "prettier": "^3.3.3"
   }
 }

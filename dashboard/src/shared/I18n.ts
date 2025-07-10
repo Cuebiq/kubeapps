@@ -1,17 +1,21 @@
+// Copyright 2021-2023 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
+
 import messages_en from "../locales/en.json";
 import { axiosWithAuth } from "./AxiosInstance";
+import * as url from "shared/url";
 
 export interface II18nConfig {
   locale: ISupportedLangs | "custom";
   messages: Record<string, string>;
 }
 
-// Add here new new supported languages literals
+// Add here new supported languages literals
 export enum ISupportedLangs {
   en = "en",
 }
 
-const messages = {};
+const messages: { [key: string]: any } = {};
 
 // Load here the compiled messages for each supported language
 messages[ISupportedLangs.en] = messages_en;
@@ -31,13 +35,14 @@ export default class I18n {
 
   public static async getCustomConfig(lang: ISupportedLangs) {
     try {
-      const customMessages = (await axiosWithAuth.get<Record<string, string>>("custom_locale.json"))
-        .data;
+      const customMessages = (
+        await axiosWithAuth.get<Record<string, string>>(url.api.custom_locale)
+      ).data;
       if (Object.keys(customMessages).length === 0) {
         throw new Error("Empty custom locale");
       }
       return { locale: lang, messages: customMessages };
-    } catch (err) {
+    } catch (e: any) {
       if (lang && ISupportedLangs[lang]) {
         return this.getConfig(lang);
       } else {

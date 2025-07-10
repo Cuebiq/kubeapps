@@ -1,19 +1,19 @@
+// Copyright 2020-2023 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
+
 import { CdsButton } from "@cds/react/button";
 import { CdsIcon } from "@cds/react/icon";
-import DifferentialTab from "components/DeploymentFormBody/DifferentialTab";
-import Alert from "components/js/Alert";
+import AlertGroup from "components/AlertGroup";
+import ConfirmDialog from "components/ConfirmDialog";
+import LoadingWrapper from "components/LoadingWrapper";
 import Tabs from "components/Tabs";
-import * as yaml from "js-yaml";
 import { useEffect, useState } from "react";
-import { IResource } from "../../shared/types";
-import ConfirmDialog from "../ConfirmDialog/ConfirmDialog";
-import AdvancedDeploymentForm from "../DeploymentFormBody/AdvancedDeploymentForm";
-import Differential from "../DeploymentFormBody/Differential";
-import LoadingWrapper from "../LoadingWrapper";
+import { IResource } from "shared/types";
+import { parseToJS } from "shared/yamlUtils";
+import OperatorAdvancedDeploymentForm from "./OperatorAdvancedDeploymentForm/OperatorAdvancedDeploymentForm";
 
 export interface IOperatorInstanceFormProps {
   isFetching: boolean;
-  namespace: string;
   handleDeploy: (resource: IResource) => void;
   defaultValues: string;
   deployedValues?: string;
@@ -29,7 +29,6 @@ export interface IOperatorInstanceFormBodyState {
 function DeploymentFormBody({
   defaultValues,
   isFetching,
-  namespace,
   handleDeploy,
   deployedValues,
 }: IOperatorInstanceFormProps) {
@@ -58,8 +57,8 @@ function DeploymentFormBody({
     setParseError(undefined);
     let resource: any = {};
     try {
-      resource = yaml.load(values);
-    } catch (e) {
+      resource = parseToJS(values);
+    } catch (e: any) {
       setParseError(new Error(`Unable to parse the given YAML. Got: ${e.message}`));
       return;
     }
@@ -73,12 +72,18 @@ function DeploymentFormBody({
   };
 
   if (isFetching) {
-    return <LoadingWrapper loaded={false} />;
+    return (
+      <LoadingWrapper
+        className="margin-t-xxl"
+        loadingText="Fetching application..."
+        loaded={false}
+      />
+    );
   }
   return (
     <>
       <form onSubmit={parseAndDeploy}>
-        {parseError && <Alert theme="danger">{parseError.message}</Alert>}
+        {parseError && <AlertGroup status="danger">{parseError.message}.</AlertGroup>}
         <ConfirmDialog
           modalIsOpen={modalIsOpen}
           loading={false}
@@ -91,31 +96,13 @@ function DeploymentFormBody({
         <div className="deployment-form-tabs">
           <Tabs
             id="deployment-form-body-tabs"
-            columns={[
-              "YAML",
-              <DifferentialTab
-                key="differential-selector"
-                deploymentEvent={deployedValues ? "upgrade" : "install"}
-                defaultValues={defaultValues}
-                deployedValues={deployedValues || ""}
-                appValues={values}
-              />,
-            ]}
+            columns={[["YAML editor", () => {}]]}
             data={[
-              <AdvancedDeploymentForm
+              <OperatorAdvancedDeploymentForm
                 appValues={values}
+                oldAppValues={deployedValues || defaultValues}
                 handleValuesChange={handleValuesChange}
                 key="advanced-deployment-form"
-              />,
-              <Differential
-                oldValues={deployedValues || defaultValues}
-                newValues={values}
-                emptyDiffText={
-                  deployedValues
-                    ? "No changes detected from deployed values"
-                    : "No changes detected from example defaults"
-                }
-                key="differential-selector"
               />,
             ]}
           />
@@ -124,19 +111,9 @@ function DeploymentFormBody({
           <CdsButton status="primary" type="submit">
             <CdsIcon shape="deploy" /> Deploy
           </CdsButton>
-          {/* TODO(andresmgot): CdsButton "type" property doesn't work, so we need to use a normal <button>
-            https://github.com/vmware/clarity/issues/5038
-          */}
-          <span className="color-icon-info">
-            <button
-              className="btn btn-info-outline"
-              type="button"
-              onClick={openModal}
-              style={{ marginTop: "-22px" }}
-            >
-              <CdsIcon shape="backup-restore" /> Restore Defaults
-            </button>
-          </span>
+          <CdsButton type="button" status="primary" action="outline" onClick={openModal}>
+            <CdsIcon shape="backup-restore" /> Restore Defaults
+          </CdsButton>
         </div>
       </form>
     </>

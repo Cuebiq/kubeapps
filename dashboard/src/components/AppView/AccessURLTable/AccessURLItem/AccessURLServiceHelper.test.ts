@@ -1,3 +1,6 @@
+// Copyright 2018-2022 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
+
 import { IResource, IServiceStatus } from "shared/types";
 import { GetURLItemFromService } from "./AccessURLServiceHelper";
 
@@ -46,7 +49,7 @@ describe("GetURLItemFromService", () => {
       expectedURLs: ["https://1.2.3.4"],
     },
     {
-      description: "it should show several URLs if there are multipe ports",
+      description: "it should show several URLs if there are multiple ports",
       ports: [{ port: 8080 }, { port: 8081 }],
       ingress: [{ ip: "1.2.3.4" }],
       expectedLink: true,

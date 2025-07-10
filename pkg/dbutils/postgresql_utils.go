@@ -1,18 +1,5 @@
-/*
-Copyright (c) 2018 Bitnami
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
+// Copyright 2018-2022 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
 
 package dbutils
 
@@ -22,8 +9,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/kubeapps/common/datastore"
-	"github.com/kubeapps/kubeapps/pkg/chart/models"
+	"github.com/vmware-tanzu/kubeapps/pkg/chart/models"
 )
 
 const (
@@ -57,27 +43,27 @@ type PostgresAssetManagerIface interface {
 	InvalidateCache() error
 	EnsureRepoExists(repoNamespace, repoName string) (int, error)
 	GetDB() PostgresDB
-	GetKubeappsNamespace() string
+	GetGlobalPackagingNamespace() string
 }
 
 // PostgresAssetManager asset manager for postgres
 type PostgresAssetManager struct {
-	connStr           string
-	DB                PostgresDB
-	KubeappsNamespace string
+	connStr                  string
+	DB                       PostgresDB
+	GlobalPackagingNamespace string
 }
 
 // NewPGManager creates an asset manager for PG
-func NewPGManager(config datastore.Config, kubeappsNamespace string) (*PostgresAssetManager, error) {
+func NewPGManager(config Config, globalPackagingNamespace string) (*PostgresAssetManager, error) {
 	url := strings.Split(config.URL, ":")
 	if len(url) != 2 {
-		return nil, fmt.Errorf("Can't parse database URL: %s", config.URL)
+		return nil, fmt.Errorf("can't parse database URL: %s", config.URL)
 	}
 	connStr := fmt.Sprintf(
 		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
 		url[0], url[1], config.Username, config.Password, config.Database,
 	)
-	return &PostgresAssetManager{connStr, nil, kubeappsNamespace}, nil
+	return &PostgresAssetManager{connStr, nil, globalPackagingNamespace}, nil
 }
 
 // Init connects to PG
@@ -87,6 +73,11 @@ func (m *PostgresAssetManager) Init() error {
 		return err
 	}
 	m.DB = db
+
+	err = m.InitTables()
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -254,6 +245,6 @@ func (m *PostgresAssetManager) GetDB() PostgresDB {
 	return m.DB
 }
 
-func (m *PostgresAssetManager) GetKubeappsNamespace() string {
-	return m.KubeappsNamespace
+func (m *PostgresAssetManager) GetGlobalPackagingNamespace() string {
+	return m.GlobalPackagingNamespace
 }

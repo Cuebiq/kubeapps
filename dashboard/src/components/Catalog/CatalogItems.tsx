@@ -1,49 +1,50 @@
-import { trimStart } from "lodash";
+// Copyright 2020-2023 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
+
+import { AvailablePackageSummary } from "gen/kubeappsapis/core/packages/v1alpha1/packages_pb";
 import { useMemo } from "react";
 import { getIcon } from "shared/Operators";
-import { IChart, IClusterServiceVersion } from "shared/types";
-import CatalogItem, { ICatalogItemProps } from "./CatalogItem";
-
-interface ICatalogItemsProps {
-  charts: IChart[];
+import { IClusterServiceVersion } from "shared/types";
+import CatalogItem, {
+  ICatalogItemProps,
+  IOperatorCatalogItem,
+  IPackageCatalogItem,
+} from "./CatalogItem";
+export interface ICatalogItemsProps {
+  availablePackageSummaries: AvailablePackageSummary[];
   csvs: IClusterServiceVersion[];
   cluster: string;
   namespace: string;
-  page: number;
-  isFetching: boolean;
+  isFirstPage: boolean;
+  hasLoadedFirstPage: boolean;
   hasFinishedFetching: boolean;
 }
 
 export default function CatalogItems({
-  charts,
+  availablePackageSummaries,
   csvs,
   cluster,
   namespace,
-  page,
-  isFetching,
+  isFirstPage,
+  hasLoadedFirstPage,
   hasFinishedFetching,
 }: ICatalogItemsProps) {
-  const chartItems: ICatalogItemProps[] = useMemo(
+  const packageItems: ICatalogItemProps[] = useMemo(
     () =>
-      charts.map(c => {
+      availablePackageSummaries.map(c => {
         return {
-          type: "chart",
-          id: `chart/${c.attributes.repo.name}/${c.id}`,
+          // TODO: this should be simplified once the operators are also implemented as a plugin
+          type: `${c.availablePackageRef?.plugin?.name}/${c.availablePackageRef?.plugin?.version}`,
+          id: `package/${c.availablePackageRef?.identifier}`,
           item: {
-            id: c.id,
-            name: c.attributes.name,
-            icon: c.attributes.icon
-              ? `api/assetsvc/${trimStart(c.attributes.icon, "/")}`
-              : undefined,
-            version: c.relationships.latestChartVersion.data.app_version,
-            description: c.attributes.description,
-            repo: c.attributes.repo,
+            name: c.displayName,
             cluster,
             namespace,
-          },
-        };
+            availablePackageSummary: c,
+          } as IPackageCatalogItem,
+        } as ICatalogItemProps;
       }),
-    [charts, cluster, namespace],
+    [availablePackageSummaries, cluster, namespace],
   );
   const crdItems: ICatalogItemProps[] = useMemo(
     () =>
@@ -63,8 +64,8 @@ export default function CatalogItems({
                   csv: csv.metadata.name,
                   cluster,
                   namespace,
-                },
-              };
+                } as IOperatorCatalogItem,
+              } as ICatalogItemProps;
             });
           } else {
             return [];
@@ -75,11 +76,17 @@ export default function CatalogItems({
   );
 
   const sortedItems =
-    isFetching && page === 1
+    !hasLoadedFirstPage && isFirstPage
       ? []
-      : chartItems
+      : packageItems
           .concat(crdItems)
-          .sort((a, b) => (a.item.name.toLowerCase() > b.item.name.toLowerCase() ? 1 : -1));
+          .sort((a, b) =>
+            a.item.name.toLowerCase() > b.item.name.toLowerCase()
+              ? 1
+              : b.item.name.toLowerCase() > a.item.name.toLowerCase()
+                ? -1
+                : 0,
+          );
 
   if (hasFinishedFetching && sortedItems.length === 0) {
     return <p>No application matches the current filter.</p>;

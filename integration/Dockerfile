@@ -1,6 +1,17 @@
-FROM bitnami/node:12.10.0
-RUN install_packages gconf-service libasound2 libatk1.0-0 libc6 libcairo2 libcups2 libdbus-1-3 libexpat1 libfontconfig1 libgcc1 libgconf-2-4 libgdk-pixbuf2.0-0 libglib2.0-0 libgtk-3-0 libnspr4 libpango-1.0-0 libpangocairo-1.0-0 libstdc++6 libx11-6 libx11-xcb1 libxcb1 libxcomposite1 libxcursor1 libxdamage1 libxext6 libxfixes3 libxi6 libxrandr2 libxrender1 libxss1 libxtst6 ca-certificates fonts-liberation libappindicator1 libnss3 lsb-release xdg-utils wget
+# Copyright 2019-2024 the Kubeapps contributors.
+# SPDX-License-Identifier: Apache-2.0
 
-ADD . /app/
-RUN yarn install
-CMD [ "yarn", "start" ]
+FROM mcr.microsoft.com/playwright:v1.48.1-jammy
+WORKDIR /app/
+
+# Copy and install deps
+COPY package.json yarn.lock /app/
+RUN yarn install --frozen-lockfile
+
+# Install browsers
+RUN npx playwright install
+
+# Note that the playwright config and the actual test files
+# will be later passed via kubectl cp in runtime
+
+CMD ["tail", "-f", "/dev/null"]

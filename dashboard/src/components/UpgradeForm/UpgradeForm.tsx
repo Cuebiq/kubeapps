@@ -1,50 +1,31 @@
-import { RouterAction } from "connected-react-router";
-import * as jsonpatch from "fast-json-patch";
-import { JSONSchema4 } from "json-schema";
-import { useEffect, useState } from "react";
-import YAML from "yaml";
+// Copyright 2018-2023 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
 
-import ChartSummary from "components/Catalog/ChartSummary";
-import ChartHeader from "components/ChartView/ChartHeader";
-import ChartVersionSelector from "components/ChartView/ChartVersionSelector";
-import Alert from "components/js/Alert";
-import Column from "components/js/Column";
-import Row from "components/js/Row";
-import { useSelector } from "react-redux";
-import { deleteValue, setValue } from "../../shared/schema";
-import { IChartState, IChartVersion, IStoreState } from "../../shared/types";
-import * as url from "../../shared/url";
-import DeploymentFormBody from "../DeploymentFormBody/DeploymentFormBody";
-import LoadingWrapper from "../LoadingWrapper/LoadingWrapper";
-import "./UpgradeForm.css";
+import { CdsFormGroup } from "@cds/react/forms";
+import actions from "actions";
+import AlertGroup from "components/AlertGroup";
+import AvailablePackageDetailExcerpt from "components/Catalog/AvailablePackageDetailExcerpt";
+import Column from "components/Column";
+import DeploymentFormBody from "components/DeploymentForm/DeploymentFormBody";
+import LoadingWrapper from "components/LoadingWrapper";
+import PackageHeader from "components/PackageHeader/PackageHeader";
+import PackageVersionSelector from "components/PackageHeader/PackageVersionSelector";
+import Row from "components/Row";
+import * as jsonpatch from "fast-json-patch";
+import { usePush } from "hooks/push";
+import { useEffect, useRef, useState } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import { Action } from "redux";
+import { ThunkDispatch } from "redux-thunk";
+import { IStoreState } from "shared/types";
+import * as url from "shared/url";
+import { deleteValue, parseToJS, setValue } from "shared/yamlUtils";
 
 export interface IUpgradeFormProps {
-  appCurrentVersion: string;
-  appCurrentValues?: string;
-  chartName: string;
-  chartsIsFetching: boolean;
-  namespace: string;
-  cluster: string;
-  releaseName: string;
-  repo: string;
-  repoNamespace: string;
-  error?: Error;
-  selected: IChartState["selected"];
-  deployed: IChartState["deployed"];
-  upgradeApp: (
-    cluster: string,
-    namespace: string,
-    version: IChartVersion,
-    chartNamespace: string,
-    releaseName: string,
-    values?: string,
-    schema?: JSONSchema4,
-  ) => Promise<boolean>;
-  push: (location: string) => RouterAction;
-  fetchChartVersions: (cluster: string, namespace: string, id: string) => Promise<IChartVersion[]>;
-  getChartVersion: (cluster: string, namespace: string, id: string, chartVersion: string) => void;
+  version?: string;
 }
 
+// TODO(agamez): Use the YAML-node based functions to avoid re-parse the yaml again and again
 function applyModifications(mods: jsonpatch.Operation[], values: string) {
   // And we add any possible change made to the original version
   if (mods.length) {
@@ -61,80 +42,111 @@ function applyModifications(mods: jsonpatch.Operation[], values: string) {
   return values;
 }
 
-function UpgradeForm({
-  appCurrentVersion,
-  appCurrentValues,
-  chartName,
-  chartsIsFetching,
-  namespace,
-  cluster,
-  releaseName,
-  repo,
-  repoNamespace,
-  error,
-  selected,
-  deployed,
-  upgradeApp,
-  push,
-  fetchChartVersions,
-  getChartVersion,
-}: IUpgradeFormProps) {
-  const [appValues, setAppValues] = useState(appCurrentValues || "");
-  const [isDeploying, setIsDeploying] = useState(false);
-  const [valuesModified, setValuesModified] = useState(false);
+function UpgradeForm(props: IUpgradeFormProps) {
+  const dispatch: ThunkDispatch<IStoreState, null, Action> = useDispatch();
+
+  const {
+    apps: {
+      selected: installedAppInstalledPackageDetail,
+      isFetching: appsIsFetching,
+      error,
+      selectedDetails: installedAppAvailablePackageDetail,
+    },
+    packages: { isFetching: chartsIsFetching, selected: selectedPackage },
+  } = useSelector((state: IStoreState) => state);
+
+  const isFetching = appsIsFetching || chartsIsFetching;
+  const { availablePackageDetail, versions, schema, values, pkgVersion } = selectedPackage;
+
+  const [appValues, setAppValues] = useState("");
   const [modifications, setModifications] = useState(
     undefined as undefined | jsonpatch.Operation[],
   );
   const [deployedValues, setDeployedValues] = useState("");
-
-  const chartID = `${repo}/${chartName}`;
-  const { version } = selected;
-
-  const {
-    apps: { isFetching: appsFetching },
-    charts: { isFetching: chartsFetching },
-  } = useSelector((state: IStoreState) => state);
-  const isFetching = appsFetching || chartsFetching;
+  const [isDeploying, setIsDeploying] = useState(false);
+  const [valuesModified, setValuesModified] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
-    fetchChartVersions(cluster, repoNamespace, chartID);
-  }, [fetchChartVersions, cluster, repoNamespace, chartID]);
+    // This block just will be run once, given that populating
+    // the list of versions does not depend on anything else
+    if (selectedPackage.versions.length === 0) {
+      dispatch(
+        actions.availablepackages.fetchAvailablePackageVersions(
+          installedAppInstalledPackageDetail?.availablePackageRef,
+        ),
+      );
+      if (installedAppAvailablePackageDetail) {
+        // Additionally, mark the current installed package version as the selected,
+        // next time, the selection will be handled by selectVersion()
+        dispatch(
+          actions.availablepackages.receiveSelectedAvailablePackageDetail(
+            installedAppAvailablePackageDetail,
+          ),
+        );
+      }
+      // If a version has been manually selected (eg. in the URL), fetch it explicitly
+      if (props.version) {
+        dispatch(
+          actions.availablepackages.fetchAndSelectAvailablePackageDetail(
+            installedAppInstalledPackageDetail?.availablePackageRef,
+            props.version,
+          ),
+        );
+      }
+    }
+  }, [
+    dispatch,
+    installedAppInstalledPackageDetail?.availablePackageRef,
+    selectedPackage.versions.length,
+    installedAppAvailablePackageDetail,
+    props.version,
+  ]);
 
   useEffect(() => {
-    if (deployed.values && !modifications) {
+    if (
+      installedAppAvailablePackageDetail?.defaultValues &&
+      installedAppInstalledPackageDetail?.valuesApplied &&
+      installedAppInstalledPackageDetail?.valuesApplied !== "null" &&
+      !modifications
+    ) {
       // Calculate modifications from the default values
-      const defaultValuesObj = YAML.parse(deployed.values);
-      const deployedValuesObj = YAML.parse(appCurrentValues || "");
-      const newModifications = jsonpatch.compare(defaultValuesObj, deployedValuesObj);
-      const values = applyModifications(newModifications, deployed.values);
+      const defaultValuesObj = parseToJS(installedAppAvailablePackageDetail?.defaultValues);
+      const deployedValuesObj = parseToJS(installedAppInstalledPackageDetail?.valuesApplied);
+      const newModifications = jsonpatch.compare(defaultValuesObj as any, deployedValuesObj as any);
+      const values = applyModifications(
+        newModifications,
+        installedAppAvailablePackageDetail?.defaultValues,
+      );
       setModifications(newModifications);
       setAppValues(values);
     }
-  }, [deployed.values, appCurrentValues, modifications]);
+  }, [
+    installedAppAvailablePackageDetail?.defaultValues,
+    installedAppInstalledPackageDetail?.valuesApplied,
+    modifications,
+  ]);
 
   useEffect(() => {
-    if (deployed.values) {
+    if (installedAppAvailablePackageDetail?.defaultValues) {
       // Apply modifications to deployed values
-      const values = applyModifications(modifications || [], deployed.values);
+      const values = applyModifications(
+        modifications || [],
+        installedAppAvailablePackageDetail?.defaultValues,
+      );
       setDeployedValues(values);
     }
-  }, [deployed.values, modifications]);
+  }, [installedAppAvailablePackageDetail?.defaultValues, modifications]);
 
   useEffect(() => {
-    if (deployed.chartVersion?.attributes.version) {
-      getChartVersion(cluster, repoNamespace, chartID, deployed.chartVersion.attributes.version);
-    }
-  }, [getChartVersion, cluster, repoNamespace, chartID, deployed.chartVersion]);
-
-  useEffect(() => {
-    if (!valuesModified && selected.values) {
+    if (!valuesModified && values) {
       // Apply modifications to the new selected version
       const newAppValues = modifications?.length
-        ? applyModifications(modifications, selected.values)
-        : selected.values;
+        ? applyModifications(modifications, values)
+        : values;
       setAppValues(newAppValues);
     }
-  }, [selected.values, modifications, valuesModified]);
+  }, [values, modifications, valuesModified]);
 
   const setValuesModifiedTrue = () => {
     setValuesModified(true);
@@ -145,85 +157,122 @@ function UpgradeForm({
   };
 
   const selectVersion = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    getChartVersion(cluster, repoNamespace, chartID, e.currentTarget.value);
+    dispatch(
+      actions.availablepackages.fetchAndSelectAvailablePackageDetail(
+        installedAppInstalledPackageDetail?.availablePackageRef,
+        e.currentTarget.value,
+      ),
+    );
   };
+
+  const push = usePush();
 
   const handleDeploy = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsDeploying(true);
-    if (selected.version) {
-      const deployedSuccess = await upgradeApp(
-        cluster,
-        namespace,
-        selected.version,
-        repoNamespace,
-        releaseName,
-        appValues,
-        selected.schema,
+    if (
+      availablePackageDetail &&
+      installedAppInstalledPackageDetail?.installedPackageRef &&
+      installedAppInstalledPackageDetail?.availablePackageRef?.context?.namespace
+    ) {
+      const deployedSuccess = await dispatch(
+        actions.installedpackages.updateInstalledPackage(
+          installedAppInstalledPackageDetail?.installedPackageRef,
+          availablePackageDetail,
+          appValues,
+          schema,
+        ),
       );
       setIsDeploying(false);
       if (deployedSuccess) {
-        push(url.app.apps.get(cluster, namespace, releaseName));
+        push(url.app.apps.get(installedAppInstalledPackageDetail?.installedPackageRef));
       }
     }
   };
 
-  if (selected.versions.length === 0 || !version) {
-    return <LoadingWrapper loaded={false} />;
-  }
-
-  const chartAttrs = version.relationships.chart.data;
+  /* eslint-disable jsx-a11y/label-has-associated-control */
   return (
     <section>
-      <LoadingWrapper loaded={!isFetching}>
-        <ChartHeader
-          releaseName={releaseName}
-          chartAttrs={chartAttrs}
-          versions={selected.versions}
-          onSelect={selectVersion}
-          currentVersion={deployed.chartVersion?.attributes.version}
-          selectedVersion={selected.version?.attributes.version}
-        />
-        {isDeploying && (
-          <h3 className="center" style={{ marginBottom: "1.2rem" }}>
-            The application is being upgraded, please wait...
-          </h3>
+      {isDeploying && (
+        <h3 className="center" style={{ marginBottom: "1.2rem" }}>
+          The application is being upgraded, please wait...
+        </h3>
+      )}
+      {!isFetching && error && (
+        <AlertGroup status="danger">An error occurred: {error?.message}.</AlertGroup>
+      )}
+      <LoadingWrapper
+        loaded={!isDeploying && !isFetching && versions?.length > 0 && !!availablePackageDetail}
+      >
+        {(!isFetching && versions?.length === 0) || !availablePackageDetail ? (
+          <></>
+        ) : (
+          <>
+            <PackageHeader
+              releaseName={installedAppInstalledPackageDetail?.installedPackageRef?.identifier}
+              availablePackageDetail={availablePackageDetail}
+              versions={versions}
+              onSelect={selectVersion}
+              currentVersion={installedAppAvailablePackageDetail?.version?.pkgVersion}
+              selectedVersion={pkgVersion}
+              hideVersionsSelector={true}
+            />
+            <LoadingWrapper
+              loaded={
+                !isDeploying && !isFetching && versions?.length > 0 && !!availablePackageDetail
+              }
+            >
+              {!installedAppInstalledPackageDetail?.availablePackageRef?.identifier ||
+              !installedAppInstalledPackageDetail?.currentVersion?.pkgVersion ? (
+                <></>
+              ) : (
+                <>
+                  <Row>
+                    <Column span={3}>
+                      <AvailablePackageDetailExcerpt pkg={availablePackageDetail} />
+                    </Column>
+                    <Column span={9}>
+                      <form onSubmit={handleDeploy} ref={formRef}>
+                        <CdsFormGroup
+                          className="deployment-form"
+                          layout="vertical"
+                          controlWidth="shrink"
+                        >
+                          <PackageVersionSelector
+                            versions={versions}
+                            selectedVersion={pkgVersion}
+                            onSelect={selectVersion}
+                            currentVersion={
+                              installedAppInstalledPackageDetail?.currentVersion?.pkgVersion
+                            }
+                            label={"Package Version"}
+                            message={"Select the version this package will be upgraded to."}
+                          />
+                        </CdsFormGroup>
+                        <DeploymentFormBody
+                          deploymentEvent="upgrade"
+                          packageId={
+                            installedAppInstalledPackageDetail?.availablePackageRef?.identifier
+                          }
+                          packageVersion={
+                            installedAppInstalledPackageDetail?.currentVersion?.pkgVersion
+                          }
+                          deployedValues={deployedValues}
+                          packagesIsFetching={isFetching}
+                          selected={selectedPackage}
+                          setValues={handleValuesChange}
+                          appValues={appValues}
+                          setValuesModified={setValuesModifiedTrue}
+                          formRef={formRef}
+                        />
+                      </form>
+                    </Column>
+                  </Row>
+                </>
+              )}
+            </LoadingWrapper>
+          </>
         )}
-        <LoadingWrapper loaded={!isDeploying}>
-          {error && <Alert theme="danger">An error occurred: {error.message}</Alert>}
-          <Row>
-            <Column span={3}>
-              <ChartSummary version={version} chartAttrs={chartAttrs} />
-            </Column>
-            <Column span={9}>
-              <form onSubmit={handleDeploy}>
-                <div className="upgrade-form-version-selector">
-                  <label className="centered deployment-form-label deployment-form-label-text-param">
-                    Upgrade to Version
-                  </label>
-                  <ChartVersionSelector
-                    versions={selected.versions}
-                    selectedVersion={selected.version?.attributes.version}
-                    onSelect={selectVersion}
-                    currentVersion={deployed.chartVersion?.attributes.version}
-                    chartAttrs={chartAttrs}
-                  />
-                </div>
-                <DeploymentFormBody
-                  deploymentEvent="upgrade"
-                  chartID={chartID}
-                  chartVersion={appCurrentVersion}
-                  deployedValues={deployedValues}
-                  chartsIsFetching={chartsIsFetching}
-                  selected={selected}
-                  setValues={handleValuesChange}
-                  appValues={appValues}
-                  setValuesModified={setValuesModifiedTrue}
-                />
-              </form>
-            </Column>
-          </Row>
-        </LoadingWrapper>
       </LoadingWrapper>
     </section>
   );

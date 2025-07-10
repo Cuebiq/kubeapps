@@ -1,6 +1,11 @@
+// Copyright 2018-2023 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
+
+import { CdsButton } from "@cds/react/button";
 import { CdsModal, CdsModalActions, CdsModalContent, CdsModalHeader } from "@cds/react/modal";
-import Alert from "components/js/Alert";
-import LoadingWrapper from "../LoadingWrapper/LoadingWrapper";
+import AlertGroup from "components/AlertGroup";
+import LoadingWrapper from "components/LoadingWrapper";
+import { DeleteError, FetchWarning } from "shared/types";
 import "./ConfirmDialog.css";
 
 interface IConfirmDialogProps {
@@ -33,14 +38,24 @@ function ConfirmDialog({
       {modalIsOpen && (
         <CdsModal size={size || "default"} closable={true} onCloseChange={closeModal}>
           {headerText && <CdsModalHeader>{headerText}</CdsModalHeader>}
-          {error && <Alert theme="danger">An error ocurred: {error.message}</Alert>}
+          {error &&
+            (error.constructor === FetchWarning ? (
+              <AlertGroup withMargin={false} status="warning">
+                There is a problem with this package: {error["message"]}.
+              </AlertGroup>
+            ) : error.constructor === DeleteError ? (
+              <AlertGroup withMargin={false} status="danger">
+                Unable to delete the application. Received: {error["message"]}.
+              </AlertGroup>
+            ) : (
+              <AlertGroup withMargin={false} status="danger">
+                An error occurred: {error["message"]}.
+              </AlertGroup>
+            ))}
           {loading === true ? (
             <div className="center">
               <CdsModalContent>
-                <p>Loading, please wait</p>
-                <div className="center">
-                  <LoadingWrapper loaded={false} />
-                </div>
+                <LoadingWrapper loadingText="Loading, please wait" loaded={false} />
               </CdsModalContent>
             </div>
           ) : (
@@ -50,15 +65,13 @@ function ConfirmDialog({
                 {extraElem && <p>{extraElem}</p>}
               </CdsModalContent>
               <CdsModalActions>
-                {/* TODO(andresmgot): CdsButton "type" property doesn't work, so we need to use a normal <button>
-                  https://github.com/vmware/clarity/issues/5038
-                  */}
-                <button className="btn btn-info-outline" type="button" onClick={closeModal}>
+                <CdsButton type="button" onClick={closeModal} action="outline">
                   Cancel
-                </button>
-                <button className="btn btn-danger" type="submit" onClick={onConfirm}>
+                </CdsButton>
+
+                <CdsButton type="button" onClick={onConfirm} status="danger">
                   {confirmationButtonText || "Delete"}
-                </button>
+                </CdsButton>
               </CdsModalActions>
             </>
           )}

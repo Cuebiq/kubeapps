@@ -1,6 +1,8 @@
-import { mount } from "enzyme";
+// Copyright 2019-2022 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
 
 import { CdsIcon } from "@cds/react/icon";
+import { mount } from "enzyme";
 import SecretItemDatum from "./SecretItemDatum";
 
 const testProps = {

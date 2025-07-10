@@ -1,288 +1,33 @@
+// Copyright 2018-2023 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
+
+import {
+  InstalledPackageReference,
+  ResourceRef as APIResourceRef,
+} from "gen/kubeappsapis/core/packages/v1alpha1/packages_pb";
+import { GetResourcesResponse } from "gen/kubeappsapis/plugins/resources/v1alpha1/resources_pb";
 import configureMockStore from "redux-mock-store";
 import thunk from "redux-thunk";
+import { Kube } from "shared/Kube";
+import { IKubeState, IResource, IStoreState } from "shared/types";
 import { getType } from "typesafe-actions";
-
 import actions from ".";
-import { Kube } from "../shared/Kube";
-import ResourceRef, { fromCRD } from "../shared/ResourceRef";
-import { IClusterServiceVersionCRD, IKubeState, IResource } from "../shared/types";
 
 const mockStore = configureMockStore([thunk]);
-const clusterName = "cluster-name";
+
+const makeStore = (operatorsEnabled: boolean) => {
+  const state: IKubeState = {
+    items: {},
+    kinds: {},
+  };
+  const config = operatorsEnabled ? { featureFlags: { operators: true } } : {};
+  return mockStore({ kube: state, config: config } as Partial<IStoreState>);
+};
 
 let store: any;
 
 beforeEach(() => {
-  store = mockStore({
-    kube: {
-      items: {},
-      sockets: {},
-    } as IKubeState,
-  });
-});
-
-const getResourceOrig = Kube.getResource;
-let getResourceMock: jest.Mock;
-beforeEach(() => {
-  getResourceMock = jest.fn(() => []);
-  Kube.getResource = getResourceMock;
-});
-afterEach(() => {
-  Kube.getResource = getResourceOrig;
-});
-
-describe("getResource", () => {
-  it("fetches a resource", async () => {
-    const expectedActions = [
-      {
-        type: getType(actions.kube.requestResource),
-        payload: `api/clusters/${clusterName}/api/v1/namespaces/default/services/foo`,
-      },
-      {
-        type: getType(actions.kube.receiveResource),
-        payload: {
-          key: `api/clusters/${clusterName}/api/v1/namespaces/default/services/foo`,
-          resource: [],
-        },
-      },
-    ];
-    const r = {
-      apiVersion: "v1",
-      kind: "Service",
-      metadata: {
-        name: "foo",
-        namespace: "default",
-      },
-    } as IResource;
-
-    const ref = new ResourceRef(r, clusterName, "services", true);
-
-    await store.dispatch(actions.kube.getResource(ref));
-    expect(store.getActions()).toEqual(expectedActions);
-    expect(getResourceMock).toHaveBeenCalledWith(
-      clusterName,
-      "v1",
-      "services",
-      true,
-      "default",
-      "foo",
-    );
-  });
-
-  it("does not fetch a resource that is already being fetched", async () => {
-    store = mockStore({
-      kube: {
-        items: {
-          [`api/clusters/${clusterName}/api/v1/namespaces/default/services/foo`]: {
-            isFetching: true,
-          },
-        },
-      },
-    });
-
-    const r = {
-      apiVersion: "v1",
-      kind: "Service",
-      metadata: {
-        name: "foo",
-        namespace: "default",
-      },
-    } as IResource;
-
-    const ref = new ResourceRef(r, clusterName, "services", true);
-
-    await store.dispatch(actions.kube.getResource(ref));
-    expect(store.getActions()).toEqual([]);
-    expect(getResourceMock).not.toBeCalled();
-  });
-});
-
-describe("getAndWatchResource", () => {
-  it("dispatches a getResource and openWatchResource action", () => {
-    const r = {
-      apiVersion: "v1",
-      kind: "Service",
-      metadata: {
-        name: "foo",
-        namespace: "default",
-      },
-    } as IResource;
-
-    const ref = new ResourceRef(r, clusterName, "services", true);
-
-    const expectedActions = [
-      {
-        type: getType(actions.kube.requestResource),
-        payload: `api/clusters/${clusterName}/api/v1/namespaces/default/services/foo`,
-      },
-      {
-        type: getType(actions.kube.openWatchResource),
-        payload: {
-          ref,
-          handler: expect.any(Function),
-          onError: expect.any(Function),
-        },
-      },
-    ];
-
-    store.dispatch(actions.kube.getAndWatchResource(ref));
-    expect(store.getActions()).toEqual(expectedActions);
-    expect(getResourceMock).toHaveBeenCalledWith(
-      clusterName,
-      "v1",
-      "services",
-      true,
-      "default",
-      "foo",
-    );
-  });
-
-  it("dispatches a getResource and openWatchResource action for a list", () => {
-    const ref = {
-      kind: "Service",
-      name: "",
-      version: "v1",
-    } as IClusterServiceVersionCRD;
-    const svc = {
-      apiVersion: "v1",
-      kind: "Service",
-      metadata: {
-        name: "foo",
-        namespace: "default",
-      },
-    } as IResource;
-
-    const r = fromCRD(
-      ref,
-      { apiVersion: "v1", plural: "services", namespaced: true },
-      clusterName,
-      "default",
-      {},
-    );
-    const expectedActions = [
-      {
-        type: getType(actions.kube.requestResource),
-        payload: `api/clusters/${clusterName}/api/v1/namespaces/default/services`,
-      },
-      {
-        type: getType(actions.kube.openWatchResource),
-        payload: {
-          ref: r,
-          handler: expect.any(Function),
-          onError: expect.any(Function),
-        },
-      },
-    ];
-
-    store.dispatch(actions.kube.getAndWatchResource(r));
-    const testActions = store.getActions();
-    expect(testActions).toEqual(expectedActions);
-    expect(getResourceMock).toHaveBeenCalledWith(
-      clusterName,
-      "v1",
-      "services",
-      true,
-      "default",
-      undefined,
-    );
-
-    const watchFunction = (testActions[1].payload as any).handler as (e: any) => void;
-    watchFunction({ data: `{"object": ${JSON.stringify(svc)}}` });
-    const newActions = [
-      {
-        type: getType(actions.kube.removeTimer),
-        payload: `api/clusters/${clusterName}/api/v1/namespaces/default/services`,
-      },
-      {
-        type: getType(actions.kube.receiveResourceFromList),
-        payload: {
-          key: `api/clusters/${clusterName}/api/v1/namespaces/default/services`,
-          resource: svc,
-        },
-      },
-    ];
-    const expectedUpdatedActions = expectedActions.concat(newActions as any);
-    const updatedActions = store.getActions();
-    expect(updatedActions).toEqual(expectedUpdatedActions);
-  });
-
-  it("adds a timer and removes it if a new event is received", () => {
-    const ref = {
-      kind: "Service",
-      name: "",
-      version: "v1",
-    } as IClusterServiceVersionCRD;
-    const svc = {
-      apiVersion: "v1",
-      kind: "Service",
-      metadata: {
-        name: "foo",
-        namespace: "default",
-      },
-    } as IResource;
-
-    const r = fromCRD(
-      ref,
-      { apiVersion: "v1", plural: "services", namespaced: true },
-      clusterName,
-      "default",
-      {},
-    );
-    const expectedActions = [
-      {
-        type: getType(actions.kube.requestResource),
-        payload: `api/clusters/${clusterName}/api/v1/namespaces/default/services`,
-      },
-      {
-        type: getType(actions.kube.openWatchResource),
-        payload: {
-          ref: r,
-          handler: expect.any(Function),
-          onError: expect.any(Function),
-        },
-      },
-    ];
-
-    store.dispatch(actions.kube.getAndWatchResource(r));
-    const testActions = store.getActions();
-    expect(testActions).toEqual(expectedActions);
-    expect(getResourceMock).toHaveBeenCalledWith(
-      clusterName,
-      "v1",
-      "services",
-      true,
-      "default",
-      undefined,
-    );
-
-    const watchFunction = (testActions[1].payload as any).handler as (e: any) => void;
-    const onErrorFunction = (testActions[1].payload as any).onError as () => void;
-    onErrorFunction();
-    watchFunction({ data: `{"object": ${JSON.stringify(svc)}}` });
-    const newActions = [
-      {
-        type: getType(actions.kube.addTimer),
-        payload: {
-          id: `api/clusters/${clusterName}/api/v1/namespaces/default/services`,
-          timer: expect.any(Function),
-        },
-      },
-      {
-        type: getType(actions.kube.removeTimer),
-        payload: `api/clusters/${clusterName}/api/v1/namespaces/default/services`,
-      },
-      {
-        type: getType(actions.kube.receiveResourceFromList),
-        payload: {
-          key: `api/clusters/${clusterName}/api/v1/namespaces/default/services`,
-          resource: svc,
-        },
-      },
-    ];
-    const expectedUpdatedActions = expectedActions.concat(newActions as any);
-    const updatedActions = store.getActions();
-    expect(updatedActions).toEqual(expectedUpdatedActions);
-  });
+  store = makeStore(false);
 });
 
 describe("getResourceKinds", () => {
@@ -291,11 +36,11 @@ describe("getResourceKinds", () => {
     Kube.getResourceKinds = jest.fn().mockResolvedValue({});
   });
   afterEach(() => {
-    jest.resetAllMocks();
+    jest.restoreAllMocks();
   });
 
   it("retrieves resource kinds", async () => {
-    const groups = ["foo"];
+    const groups = [{ name: "foo" }, { name: "operators.coreos.com" }];
     const kinds = { test: "data" };
     Kube.getAPIGroups = jest.fn().mockResolvedValue(groups);
     Kube.getResourceKinds = jest.fn().mockResolvedValue(kinds);
@@ -317,7 +62,7 @@ describe("getResourceKinds", () => {
   });
 
   it("returns an error if fails to retrieve kinds", async () => {
-    const groups = ["foo"];
+    const groups = [{ name: "foo" }];
     Kube.getAPIGroups = jest.fn().mockResolvedValue(groups);
     Kube.getResourceKinds = jest.fn().mockRejectedValue(new Error("boom!"));
     const expectedActions = [
@@ -335,5 +80,137 @@ describe("getResourceKinds", () => {
     expect(testActions).toEqual(expectedActions);
     expect(Kube.getAPIGroups).toHaveBeenCalledWith("cluster-1");
     expect(Kube.getResourceKinds).toHaveBeenCalledWith("cluster-1", groups);
+  });
+});
+
+describe("getResources", () => {
+  it("dispatches a requestResources action", () => {
+    const refs = [
+      {
+        apiVersion: "v1",
+        kind: "Service",
+        name: "foo",
+        namespace: "default",
+      },
+    ] as APIResourceRef[];
+
+    const pkg = {
+      identifier: "test-pkg",
+    } as InstalledPackageReference;
+
+    const watch = true;
+
+    const expectedActions = [
+      {
+        type: getType(actions.kube.requestResources),
+        payload: {
+          pkg,
+          refs,
+          watch,
+          handler: expect.any(Function),
+          onError: expect.any(Function),
+        },
+      },
+    ];
+
+    store.dispatch(actions.kube.getResources(pkg, refs, watch));
+    expect(store.getActions()).toEqual(expectedActions);
+
+    const expectedResource = {
+      apiVersion: "v1",
+      kind: "Service",
+      metadata: {
+        name: "foo",
+        namespace: "default",
+      },
+    } as IResource;
+    const getResourcesResponse = {
+      resourceRef: {
+        apiVersion: "v1",
+        kind: "Service",
+        name: "foo",
+        namespace: "default",
+      } as APIResourceRef,
+      manifest: JSON.stringify(expectedResource),
+    } as GetResourcesResponse;
+
+    const expectedHandlerActions = [
+      expectedActions[0],
+      {
+        type: getType(actions.kube.receiveResource),
+        payload: {
+          key: "v1/Service/default/foo",
+          resource: expectedResource,
+        },
+      },
+    ];
+    const handler = store.getActions()[0].payload.handler;
+    handler(getResourcesResponse);
+    expect(store.getActions()).toEqual(expectedHandlerActions);
+  });
+});
+
+describe("processGetResourcesResponse", () => {
+  it("dispatches a receiveResource action with the expected key", () => {
+    const expectedResource = {
+      apiVersion: "v1",
+      kind: "Service",
+      metadata: {
+        name: "foo",
+        namespace: "default",
+      },
+    } as IResource;
+
+    const getResourcesResponse = {
+      resourceRef: {
+        apiVersion: "v1",
+        kind: "Service",
+        name: "foo",
+        namespace: "default",
+      } as APIResourceRef,
+      manifest: JSON.stringify(expectedResource),
+    } as GetResourcesResponse;
+
+    const expectedKey = "v1/Service/default/foo";
+
+    const expectedActions = [
+      {
+        type: getType(actions.kube.receiveResource),
+        payload: {
+          key: expectedKey,
+          resource: expectedResource,
+        },
+      },
+    ];
+
+    actions.kube.processGetResourcesResponse(getResourcesResponse, store.dispatch);
+
+    expect(store.getActions()).toEqual(expectedActions);
+  });
+
+  it("dispatches an error action if the resourceRef is missing", () => {
+    const expectedResource = {
+      apiVersion: "v1",
+      kind: "Service",
+      metadata: {
+        name: "foo",
+        namespace: "default",
+      },
+    } as IResource;
+
+    const getResourcesResponse = {
+      manifest: JSON.stringify(expectedResource),
+    } as GetResourcesResponse;
+
+    const expectedActions = [
+      {
+        type: getType(actions.kube.receiveResourcesError),
+        payload: new Error("received resource without a resource reference"),
+      },
+    ];
+
+    actions.kube.processGetResourcesResponse(getResourcesResponse, store.dispatch);
+
+    expect(store.getActions()).toEqual(expectedActions);
   });
 });

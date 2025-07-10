@@ -1,13 +1,28 @@
+// Copyright 2018-2024 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
+
 .card-header {
+  display: block;
+  height: auto;
+  background-color: inherit;
+
+  &.no-border {
+    border-bottom: 0;
+  }
+
   .info-card-header {
     display: flex;
     justify-content: space-between;
+
     .card-title {
       max-width: calc(100% - 24px);
+      margin: 0;
+      margin-bottom: 0;
+      line-height: 1.5rem;
       overflow-x: hidden;
       text-overflow: ellipsis;
-      margin-bottom: 0px;
     }
+
     .card-tooltip {
       align-self: flex-end;
     }
@@ -15,64 +30,74 @@
 }
 
 .bg-img {
-  width: 0px;
-  opacity: 0.05;
   position: relative;
   right: 80px;
-  bottom: 10px;
+  bottom: 17px;
+  width: 0;
+  opacity: 0.05;
+
   img {
     height: 100px;
   }
 }
 
 .card-block {
-  height: 4.5rem;
-  overflow: hidden;
   .info-card-block {
     display: flex;
+
     .card-icon {
       display: flex;
+      width: 64px;
       align-items: center;
       text-align: center;
-      width: 64px;
-      height: 64px;
+
       img {
         width: 64px;
-        max-height: 64px;
       }
     }
+
     .card-description-wrapper {
       display: grid;
-      height: 64px;
       width: 100%;
+      min-height: 7lh;
       align-items: center;
+
       .card-description {
-        max-height: 64px;
         padding-left: 0.6rem;
       }
     }
   }
 }
 
-.kubeapps-card-footer {
-  display: flex;
-  justify-content: space-between;
-  width: 100%;
-  overflow-x: auto;
-  .kubeapps-card-footer-col1 {
-    width: 100%;
-    margin: 0 0.6rem 0 0.6rem;
-  }
-  .kubeapps-card-footer-col2 {
-    margin: 0 0.5rem 0 0;
-  }
-}
-
 .card.clickable a {
-  text-decoration: none;
   color: var(--cds-global-typography-color-400, #333);
+  text-decoration: none;
 }
 
 .footer-tags {
   text-align: right;
+
+  span {
+    margin-bottom: 0.6em;
+  }
+}
+
+.label.label-info-secondary {
+  border-color: var(--cds-alias-status-neutral-shade, #00567a);
+  background: var(--cds-alias-status-neutral-tint, #e3f5fc);
+}
+
+.kubeapps-card-footer {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  overflow-x: auto;
+
+  &-col1 {
+    margin: 0 0.6rem;
+  }
+
+  &-col2 {
+    margin: 0 0.5rem 0 0;
+  }
 }

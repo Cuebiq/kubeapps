@@ -1,12 +1,19 @@
+// Copyright 2018-2023 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
+
 .info-icon {
   display: grid;
-  align-items: center;
   height: 100%;
-  padding-left: 0.4rem;
+  align-items: center;
   justify-content: center;
+  padding-left: 0.4rem;
 }
 
 /* stylelint-disable-next-line selector-type-no-unknown */
 .is-success cds-icon {
   --color: var(--cds-alias-status-success-tint);
+}
+
+.small-tooltip {
+  font-size: 75% !important;
 }

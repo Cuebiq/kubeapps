@@ -1,18 +1,21 @@
+// Copyright 2018-2023 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
+
 import { CdsButton } from "@cds/react/button";
 import { CdsIcon } from "@cds/react/icon";
 import { CdsToggle, CdsToggleGroup } from "@cds/react/toggle";
 import actions from "actions";
-import Alert from "components/js/Alert";
+import ErrorAlert from "components/ErrorAlert";
 import LoadingWrapper from "components/LoadingWrapper/LoadingWrapper";
-import { push } from "connected-react-router";
-import * as qs from "qs";
+import { usePush } from "hooks/push";
+import qs from "qs";
 import { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import * as ReactRouter from "react-router";
+import * as ReactRouter from "react-router-dom";
 import { Link } from "react-router-dom";
 import { Kube } from "shared/Kube";
-import { IStoreState } from "../../shared/types";
-import * as url from "../../shared/url";
+import { IStoreState } from "shared/types";
+import * as url from "shared/url";
 import PageHeader from "../PageHeader/PageHeader";
 import SearchFilter from "../SearchFilter/SearchFilter";
 import "./AppList.css";
@@ -28,19 +31,19 @@ function AppList() {
     apps: { error, isFetching, listOverview },
     clusters: { clusters, currentCluster },
     operators: { isFetching: isFetchingResources, resources: customResources, csvs },
-    config: { appVersion },
+    config: { appVersion, featureFlags },
   } = useSelector((state: IStoreState) => state);
   const cluster = currentCluster;
   const { currentNamespace } = clusters[cluster];
 
   const [searchFilter, setSearchFilter] = useState("");
-  const [allNS, setAllNS] = useState(false);
+  const [allNS, setAllNS] = useState(allNSQuery === "yes");
   const [canSetAllNS, setCanSetAllNS] = useState(false);
-  const [namespace, setNamespace] = useState(currentNamespace);
   const toggleListAllNS = () => {
     submitFilters(!allNS);
     setAllNS(!allNS);
   };
+  const push = usePush();
 
   const submitFilters = (allns: boolean) => {
     const filters = [];
@@ -52,32 +55,9 @@ function AppList() {
     if (searchFilter) {
       filters.push(`q=${searchFilter}`);
     }
-    dispatch(push(`?${filters.join("&")}`));
+    push(`?${filters.join("&")}`);
   };
   const submitSearchFilter = () => submitFilters(allNS);
-
-  useEffect(() => {
-    setNamespace(currentNamespace);
-  }, [currentNamespace]);
-
-  useEffect(() => {
-    if (allNS) {
-      setNamespace("");
-    } else {
-      setNamespace(currentNamespace);
-    }
-  }, [allNS, currentNamespace]);
-
-  useEffect(() => {
-    dispatch(actions.apps.fetchAppsWithUpdateInfo(cluster, namespace));
-    dispatch(actions.operators.getResources(cluster, namespace));
-  }, [dispatch, cluster, namespace]);
-
-  useEffect(() => {
-    // In order to be able to list applications in all namespaces, it's necessary to be able
-    // to list/get secrets in all of them.
-    Kube.canI(cluster, "", "secrets", "list", "").then(allowed => setCanSetAllNS(allowed));
-  }, [cluster]);
 
   useEffect(() => {
     setSearchFilter(searchQuery);
@@ -87,6 +67,27 @@ function AppList() {
     setAllNS(allNSQuery === "yes" ? true : false);
   }, [allNSQuery]);
 
+  useEffect(() => {
+    // We wait until the namespace is set from the state.
+    if (currentNamespace !== "") {
+      dispatch(
+        actions.installedpackages.fetchInstalledPackages(cluster, allNS ? "" : currentNamespace),
+      );
+      if (featureFlags?.operators) {
+        dispatch(actions.operators.getResources(cluster, allNS ? "" : currentNamespace));
+      }
+    }
+  }, [dispatch, cluster, currentNamespace, featureFlags, allNS]);
+
+  useEffect(() => {
+    // In order to be able to list applications in all namespaces, it's necessary to be able
+    // to list/get secrets in all of them.
+    Kube.canI(cluster, "", "secrets", "list", "")
+      .then(allowed => setCanSetAllNS(allowed))
+      ?.catch(() => setCanSetAllNS(false));
+  }, [cluster]);
+
+  /* eslint-disable jsx-a11y/label-has-associated-control */
   return (
     <section>
       <PageHeader
@@ -115,22 +116,26 @@ function AppList() {
           </>
         }
         buttons={[
-          <Link to={url.app.catalog(cluster, namespace)} key="deploy-button">
+          <Link to={url.app.catalog(cluster, currentNamespace)} key="deploy-button">
             <CdsButton status="primary">
               <CdsIcon shape="deploy" /> Deploy
             </CdsButton>
           </Link>,
         ]}
       />
-      <LoadingWrapper loaded={!isFetching && !isFetchingResources}>
+      <LoadingWrapper
+        loaded={!isFetching && !isFetchingResources}
+        loadingText="Getting the list of applications..."
+        className="margin-t-xl"
+      >
         {error ? (
-          <Alert theme="danger">Unable to list apps: {error.message}</Alert>
+          <ErrorAlert error={error} />
         ) : (
           <AppListGrid
             appList={listOverview}
             customResources={customResources}
             cluster={cluster}
-            namespace={namespace}
+            namespace={currentNamespace}
             appVersion={appVersion}
             filter={searchFilter}
             csvs={csvs}

@@ -1,137 +1,83 @@
-import { useEffect } from "react";
+// Copyright 2018-2023 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
 
-import Alert from "components/js/Alert";
-import { RouterAction } from "connected-react-router";
-import { JSONSchema4 } from "json-schema";
-import {
-  FetchError,
-  IAppRepository,
-  IChartState,
-  IChartVersion,
-  IRelease,
-  UpgradeError,
-} from "../../shared/types";
-import LoadingWrapper from "../LoadingWrapper/LoadingWrapper";
+import actions from "actions";
+import AlertGroup from "components/AlertGroup";
+import LoadingWrapper from "components/LoadingWrapper";
+import { InstalledPackageReference } from "gen/kubeappsapis/core/packages/v1alpha1/packages_pb";
+import { Plugin } from "gen/kubeappsapis/core/plugins/v1alpha1/plugins_pb";
+import { useEffect, useState } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import * as ReactRouter from "react-router-dom";
+import { Action } from "redux";
+import { ThunkDispatch } from "redux-thunk";
+import { FetchError, IStoreState } from "shared/types";
 import SelectRepoForm from "../SelectRepoForm/SelectRepoForm";
 import UpgradeForm from "../UpgradeForm/UpgradeForm";
 
-export interface IAppUpgradeProps {
-  app?: IRelease;
-  appsIsFetching: boolean;
-  chartsIsFetching: boolean;
-  error?: FetchError | UpgradeError;
-  namespace: string;
-  cluster: string;
-  releaseName: string;
-  repoName?: string;
-  repoNamespace?: string;
-  selected: IChartState["selected"];
-  deployed: IChartState["deployed"];
-  upgradeApp: (
-    cluster: string,
-    namespace: string,
-    version: IChartVersion,
-    chartNamespace: string,
-    releaseName: string,
-    values?: string,
-    schema?: JSONSchema4,
-  ) => Promise<boolean>;
-  fetchChartVersions: (cluster: string, namespace: string, id: string) => Promise<IChartVersion[]>;
-  getAppWithUpdateInfo: (cluster: string, namespace: string, releaseName: string) => void;
-  getChartVersion: (cluster: string, namespace: string, id: string, chartVersion: string) => void;
-  getDeployedChartVersion: (
-    cluster: string,
-    namespace: string,
-    id: string,
-    chartVersion: string,
-  ) => void;
-  push: (location: string) => RouterAction;
-  // repo selector properties
-  reposIsFetching: boolean;
-  repoError?: Error;
-  chartsError: Error | undefined;
-  repo: IAppRepository;
-  repos: IAppRepository[];
-  checkChart: (cluster: string, namespace: string, repo: string, chartName: string) => any;
-  fetchRepositories: (namespace: string) => void;
-}
+function AppUpgrade() {
+  const dispatch: ThunkDispatch<IStoreState, null, Action> = useDispatch();
+  const { cluster, namespace, releaseName, pluginName, pluginVersion, version } =
+    ReactRouter.useParams();
 
-function AppUpgrade({
-  app,
-  appsIsFetching,
-  chartsIsFetching,
-  error,
-  namespace,
-  cluster,
-  releaseName,
-  repoName,
-  repoNamespace,
-  selected,
-  deployed,
-  upgradeApp,
-  fetchChartVersions,
-  getAppWithUpdateInfo,
-  getChartVersion,
-  getDeployedChartVersion,
-  push,
-}: IAppUpgradeProps) {
-  useEffect(() => {
-    getAppWithUpdateInfo(cluster, namespace, releaseName);
-  }, [getAppWithUpdateInfo, cluster, namespace, releaseName]);
+  const {
+    apps: {
+      selected: installedAppInstalledPackageDetail,
+      isFetching: appsIsFetching,
+      error,
+      selectedDetails: installedAppAvailablePackageDetail,
+    },
+    packages: { isFetching: chartsIsFetching, selected: selectedPackage },
+  } = useSelector((state: IStoreState) => state);
 
-  const chart = app?.chart;
+  const isFetching = appsIsFetching || chartsIsFetching;
+
+  const [pluginObj] = useState({ name: pluginName, version: pluginVersion } as Plugin);
+
+  // Initial fetch using the params in the URL
   useEffect(() => {
-    if (
-      repoName &&
-      repoNamespace &&
-      chart &&
-      chart.metadata &&
-      chart.metadata &&
-      chart.metadata.name &&
-      chart.metadata.version
-    ) {
-      const chartID = `${repoName}/${chart.metadata.name}`;
-      getDeployedChartVersion(cluster, repoNamespace, chartID, chart.metadata.version);
-    }
-  }, [getDeployedChartVersion, app, chart, repoName, repoNamespace, cluster]);
+    dispatch(actions.availablepackages.resetSelectedAvailablePackageDetail());
+    dispatch(
+      actions.installedpackages.getInstalledPackage({
+        context: { cluster: cluster, namespace: namespace },
+        identifier: releaseName,
+        plugin: pluginObj,
+      } as InstalledPackageReference),
+    );
+  }, [dispatch, cluster, namespace, pluginObj, releaseName]);
 
   if (error && error.constructor === FetchError) {
-    return <Alert theme="danger">Unable to retrieve the current app: {error.message}</Alert>;
-  }
-
-  if (appsIsFetching || !app || !app.updateInfo) {
-    return <LoadingWrapper loaded={false} />;
-  }
-
-  const appRepoName = repoName || app.updateInfo.repository.name;
-  const repoNS = repoNamespace || app.updateInfo.repository.namespace;
-  if (app && app.chart && app.chart.metadata && appRepoName) {
     return (
-      <div>
-        <UpgradeForm
-          appCurrentVersion={app.chart.metadata.version!}
-          appCurrentValues={(app.config && app.config.raw) || ""}
-          chartName={app.chart.metadata.name!}
-          chartsIsFetching={chartsIsFetching}
-          repo={appRepoName}
-          repoNamespace={repoNS}
-          namespace={namespace}
-          cluster={cluster}
-          releaseName={releaseName}
-          selected={selected}
-          deployed={deployed}
-          upgradeApp={upgradeApp}
-          push={push}
-          error={error}
-          fetchChartVersions={fetchChartVersions}
-          getChartVersion={getChartVersion}
-        />
-      </div>
+      <AlertGroup status="danger">Unable to retrieve the current app: {error.message}.</AlertGroup>
     );
   }
 
+  if (isFetching || !installedAppInstalledPackageDetail) {
+    const loadingPkgName =
+      selectedPackage.availablePackageDetail?.availablePackageRef?.identifier ??
+      installedAppInstalledPackageDetail?.installedPackageRef?.identifier ??
+      "package";
+    return (
+      <LoadingWrapper
+        loadingText={`Fetching ${decodeURIComponent(loadingPkgName)} version...`}
+        className="margin-t-xxl"
+        loaded={false}
+      />
+    );
+  }
+  if (installedAppAvailablePackageDetail && installedAppInstalledPackageDetail && selectedPackage) {
+    return (
+      <div>
+        <UpgradeForm version={version} />
+      </div>
+    );
+  }
   return (
-    <SelectRepoForm cluster={cluster} namespace={namespace} chartName={chart?.metadata?.name!} />
+    <SelectRepoForm
+      cluster={cluster || ""}
+      namespace={namespace || ""}
+      app={installedAppInstalledPackageDetail}
+    />
   );
 }
 

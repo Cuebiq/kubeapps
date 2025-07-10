@@ -1,12 +1,24 @@
-import Axios, { AxiosResponse } from "axios";
-import * as jwt from "jsonwebtoken";
+// Copyright 2018-2023 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
+
+import { Code } from "@connectrpc/connect";
+import { AxiosResponse } from "axios";
+import jwt from "jsonwebtoken";
 import { get } from "lodash";
-import * as url from "shared/url";
 import { IConfig } from "./Config";
+import { KubeappsGrpcClient } from "./KubeappsGrpcClient";
+import {
+  InternalServerNetworkError,
+  NotFoundNetworkError,
+  UnauthorizedNetworkError,
+} from "./types";
 const AuthTokenKey = "kubeapps_auth_token";
 const AuthTokenOIDCKey = "kubeapps_auth_token_oidc";
 
 export class Auth {
+  public static resourcesServiceClient = (token?: string) =>
+    new KubeappsGrpcClient(token).getResourcesServiceClientImpl();
+
   public static getAuthToken() {
     return localStorage.getItem(AuthTokenKey);
   }
@@ -42,7 +54,10 @@ export class Auth {
       return [];
     }
     return [
-      "base64url.bearer.authorization.k8s.io." + btoa(token).replace(/=*$/g, ""),
+      // Trimming the b64 padding character ("=") as it is not accepted by k8s
+      // https://github.com/kubernetes/apiserver/blob/release-1.22/pkg/authentication/request/websocket/protocol.go#L38
+      "base64url.bearer.authorization.k8s.io." +
+        Buffer.from(token).toString("base64").replaceAll("=", ""),
       "binary.k8s.io",
     ];
   }
@@ -58,23 +73,39 @@ export class Auth {
   // Throws an error if the token is invalid
   public static async validateToken(cluster: string, token: string) {
     try {
-      await Axios.get(url.api.k8s.base(cluster) + "/", {
-        headers: { Authorization: `Bearer ${token}` },
+      await this.resourcesServiceClient(token).checkNamespaceExists({
+        context: { cluster, namespace: "default" },
       });
-    } catch (e) {
-      const res = e.response as AxiosResponse;
-      if (res.status === 401) {
-        throw new Error("invalid token");
+    } catch (e: any) {
+      if (e.code === Code.Unauthenticated) {
+        throw new UnauthorizedNetworkError("invalid token");
       }
-      // A 403 authorization error only occurs if the token resulted in
-      // successful authentication. We don't make any assumptions over RBAC
-      // for the root "/" nonResourceURL or other required authz permissions
-      // until operations on those resources are attempted (though we may
-      // want to revisit this in the future).
-      if (res.status !== 403) {
-        throw new Error(`${res.status}: ${res.data}`);
+      // https://kubernetes.io/docs/reference/access-authn-authz/authentication/#anonymous-requests
+      // Since we are always passing a token here, A 403 authorization error
+      // only occurs if the token resulted in successful authentication. We
+      // don't make any assumptions over RBAC for the requested namespace or
+      // other required authz permissions until operations on those resources
+      // are attempted (though we may want to revisit this in the future).
+      if (e.code !== Code.PermissionDenied) {
+        if (e.code === Code.NotFound) {
+          throw new NotFoundNetworkError("not found");
+        }
+        if (e.code === Code.Internal) {
+          throw new InternalServerNetworkError("internal error");
+        }
+        throw new InternalServerNetworkError(`${e.code}: ${e.message}`);
       }
     }
+  }
+
+  // isErrorFromAPIsServer returns true if the response is a 403 determined to have originated
+  // from the grpc-web APIs server, rather than the auth proxy.
+  public static isErrorFromAPIsServer(e: any): boolean {
+    const contentType = (e.metadata?.get("content-type") || "") as string;
+    if (contentType.startsWith("application/grpc-web")) {
+      return true;
+    }
+    return false;
   }
 
   // is403FromAuthProxy returns true if the response is a 403 determined to have originated
@@ -86,7 +117,9 @@ export class Auth {
   // upstream result). Hence encapsulating this ugliness here so we can fix
   // it in the one spot. We may need to query `/oauth2/info` to avoid potential
   // false positives.
-  public static is403FromAuthProxy(r: AxiosResponse): boolean {
+  // Note: This function is only used now by AxiosInstance which
+  // in turn is only used for operators support.
+  public static is403FromAuthProxy(r: AxiosResponse<any>): boolean {
     if (r.data && typeof r.data === "string" && r.data.match("system:serviceaccount")) {
       // If the error message is related to a service account is not from the auth proxy
       return false;
@@ -99,38 +132,43 @@ export class Auth {
   // the k8s api server nowadays defaults to allowing anonymous
   // requests, so that rather than returning a 401, a 403 is returned if
   // RBAC does not allow the anonymous user access.
-  public static isAnonymous(response: AxiosResponse): boolean {
+  //
+  // Note: This function is only used now by AxiosInstance which
+  // in turn is only used for operators support.
+  public static isAnonymous(response: AxiosResponse<any>): boolean {
     const msg = get(response, "data.message") || get(response, "data");
     return typeof msg === "string" && msg.includes("system:anonymous");
   }
 
-  // isAuthenticatedWithCookie() does an anonymous GET request to determine if
+  // isAuthenticatedWithCookie() does a GET request to determine if
   // the request is authenticated with an http-only cookie (there is, by design,
   // no way to determine via client JS whether an http-only cookie is present).
+  //
+  // Note that when using the auth-proxy, anonymous requests never
+  // get to the backend since the auth-proxy requires authentication.
+  // But if this function is incorrectly called when the auth-proxy
+  // is not in use, with a cluster that supports anonymous requests,
+  // it could potentially return a false positive.
   public static async isAuthenticatedWithCookie(cluster: string): Promise<boolean> {
     try {
-      await Axios.get(url.api.k8s.base(cluster) + "/");
-    } catch (e) {
-      const response = e.response as AxiosResponse;
+      await this.resourcesServiceClient().checkNamespaceExists({
+        context: { cluster, namespace: "default" },
+      });
+    } catch (e: any) {
       // The only error response which can possibly mean we did authenticate is
       // a 403 from the k8s api server (ie. we got through to k8s api server
       // but RBAC doesn't authorize us).
-      if (response.status !== 403) {
+      if (e.code !== Code.PermissionDenied) {
         return false;
       }
 
-      // A 403 error response from the auth proxy itself means we did not get
-      // through to the API server but instead were rejected by the auth
-      // proxy (ie. no http-only cookie).
-      // TODO(mnelson): Check why doesn't the auth proxy return a 401 for a request without auth?
-      if (this.is403FromAuthProxy(response)) {
-        return false;
+      // A 403 error response from our APIs server, rather than the
+      // auth proxy, means we are authenticated and did get
+      // through to the API server but were rejected by RBAC.
+      if (this.isErrorFromAPIsServer(e)) {
+        return true;
       }
-      // Finally, the k8s api server nowadays defaults to allowing anonymous
-      // requests, so that rather than returning a 401, a 403 is returned if
-      // RBAC does not allow the anonymous user access. An http-only cookie
-      // will not result in an anonymous request, so...
-      return !this.isAnonymous(response);
+      return false;
     }
     return true;
   }
@@ -141,7 +179,7 @@ export class Auth {
   // we use a default namespace for both invalid tokens and tokens without the expected
   // key.
   public static defaultNamespaceFromToken(token: string) {
-    const payload = jwt.decode(token);
+    const payload = jwt.decode(token) as { [index: string]: any };
     const namespaceKey = "kubernetes.io/serviceaccount/namespace";
     if (payload && payload[namespaceKey]) {
       return payload[namespaceKey];

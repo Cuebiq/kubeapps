@@ -1,7 +1,10 @@
+// Copyright 2019-2023 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
+
 import { CdsButton } from "@cds/react/button";
+import { act } from "@testing-library/react";
+import LoadingWrapper from "components/LoadingWrapper";
 import { mount, shallow } from "enzyme";
-import { act } from "react-dom/test-utils";
-import LoadingWrapper from "../../../../components/LoadingWrapper/LoadingWrapper";
 import RollbackDialog from "./RollbackDialog";
 
 const defaultProps = {
@@ -23,18 +26,23 @@ it("should render the form if it is not loading", () => {
 });
 
 it("should submit the current revision", () => {
+  const currentRevision = defaultProps.currentRevision;
   const onConfirm = jest.fn();
-  const wrapper = mount(<RollbackDialog {...defaultProps} onConfirm={onConfirm} />);
+  const wrapper = mount(
+    <RollbackDialog {...defaultProps} currentRevision={currentRevision} onConfirm={onConfirm} />,
+  );
   const submit = wrapper.find(CdsButton).filterWhere(b => b.text() === "Rollback");
   expect(submit).toExist();
+  expect(wrapper.find("option").at(0).prop("value")).toBe(1);
+  expect(wrapper.find("cds-control-message").text()).toBe("(current: 2)");
   act(() => {
     (submit.prop("onClick") as any)();
   });
   wrapper.update();
-  expect(onConfirm).toBeCalledWith(1);
+  expect(onConfirm).toBeCalledWith(Number(currentRevision) - 1);
 });
 
-it("should disable the rollback button if there are no revisions", () => {
+it("should deactivate the rollback button if there are no revisions", () => {
   const wrapper = mount(<RollbackDialog {...defaultProps} currentRevision={1} />);
   expect(wrapper).toIncludeText("it's not possible to rollback");
   const submit = wrapper.find(CdsButton).filterWhere(b => b.text() === "Rollback");

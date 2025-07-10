@@ -1,4 +1,7 @@
-import olmLogo from "icons/olm-big.svg";
+// Copyright 2020-2022 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
+
+import olmLogo from "icons/olm-logo.svg";
 
 export default function OLMNotFound() {
   return (

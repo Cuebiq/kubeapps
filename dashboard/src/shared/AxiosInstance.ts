@@ -1,24 +1,26 @@
-import Axios, { AxiosError, AxiosInstance, AxiosRequestConfig, AxiosResponse } from "axios";
+// Copyright 2018-2023 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
 
+import Axios, { AxiosError, AxiosInstance, AxiosResponse } from "axios";
 import { Action, Store } from "redux";
 import { ThunkDispatch } from "redux-thunk";
 import actions from "../actions";
 import { Auth } from "./Auth";
 import {
-  ConflictError,
-  ForbiddenError,
-  InternalServerError,
+  ConflictNetworkError,
+  ForbiddenNetworkError,
+  InternalServerNetworkError,
   IRBACRole,
   IStoreState,
-  NotFoundError,
-  UnauthorizedError,
-  UnprocessableEntity,
+  NotFoundNetworkError,
+  UnauthorizedNetworkError,
+  UnprocessableEntityError,
 } from "./types";
 
 export function addAuthHeaders(axiosInstance: AxiosInstance) {
-  axiosInstance.interceptors.request.use((config: AxiosRequestConfig) => {
+  axiosInstance.interceptors.request.use(config => {
     const authToken = Auth.getAuthToken();
-    if (authToken) {
+    if (authToken && config?.headers) {
       config.headers.Authorization = `Bearer ${authToken}`;
     }
     return config;
@@ -30,7 +32,7 @@ export function addErrorHandling(axiosInstance: AxiosInstance, store: Store<ISto
     response => response,
     e => {
       const dispatch = store.dispatch as ThunkDispatch<IStoreState, null, Action>;
-      const err: AxiosError = e;
+      const err: AxiosError<any, any> = e;
       if (
         err.code === undefined &&
         err.message === "Network Error" &&
@@ -57,11 +59,11 @@ export function addErrorHandling(axiosInstance: AxiosInstance, store: Store<ISto
         // logout either way.
         dispatch(actions.auth.expireSession());
       };
-      const response = err.response as AxiosResponse;
+      const response = err.response as AxiosResponse<any>;
       switch (response && response.status) {
         case 401:
           dispatchErrorAndLogout(message);
-          return Promise.reject(new UnauthorizedError(message));
+          return Promise.reject(new UnauthorizedNetworkError(message));
         case 403:
           // Subcase 1:
           //   if usingOIDCToken: a 403 directly from the auth proxy
@@ -81,7 +83,7 @@ export function addErrorHandling(axiosInstance: AxiosInstance, store: Store<ISto
           try {
             const jsonMessage = JSON.parse(message) as IRBACRole[];
             return Promise.reject(
-              new ForbiddenError(
+              new ForbiddenNetworkError(
                 `Forbidden error, missing permissions: ${jsonMessage
                   .map(forbiddenAction => {
                     const { apiGroup, resource, namespace, clusterWide, verbs } = forbiddenAction;
@@ -92,20 +94,20 @@ export function addErrorHandling(axiosInstance: AxiosInstance, store: Store<ISto
                   .join("; ")}`,
               ),
             );
-          } catch (e) {
+          } catch (e: any) {
             // Subcase 4:
             //   A non-parseable 403 error.
             //   Do not require reauthentication and display error (ie. edge cases of proxy auth)
           }
-          return Promise.reject(new ForbiddenError(message));
+          return Promise.reject(new ForbiddenNetworkError(message));
         case 404:
-          return Promise.reject(new NotFoundError(message));
+          return Promise.reject(new NotFoundNetworkError(message));
         case 409:
-          return Promise.reject(new ConflictError(message));
+          return Promise.reject(new ConflictNetworkError(message));
         case 422:
-          return Promise.reject(new UnprocessableEntity(message));
+          return Promise.reject(new UnprocessableEntityError(message));
         case 500:
-          return Promise.reject(new InternalServerError(message));
+          return Promise.reject(new InternalServerNetworkError(message));
         default:
           return Promise.reject(new Error(message));
       }

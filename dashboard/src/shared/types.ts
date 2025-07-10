@@ -1,35 +1,94 @@
-import { RouterState } from "connected-react-router";
-import * as jsonSchema from "json-schema";
+// Copyright 2018-2024 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
+
+import type { PartialMessage } from "@bufbuild/protobuf";
+import { JSONSchemaType, ErrorObject } from "ajv";
+import {
+  AvailablePackageDetail,
+  AvailablePackageSummary,
+  GetAvailablePackageSummariesResponse,
+  InstalledPackageDetail,
+  InstalledPackageSummary,
+  PackageAppVersion,
+  PackageMetadata,
+  ResourceRef,
+} from "gen/kubeappsapis/core/packages/v1alpha1/packages_pb";
+import {
+  DockerCredentials,
+  OpaqueCredentials,
+  PackageRepositoryAuth_PackageRepositoryAuthType,
+  SshCredentials,
+  TlsCertKey,
+  UsernamePassword,
+} from "gen/kubeappsapis/core/packages/v1alpha1/repositories_pb";
+import { Plugin } from "gen/kubeappsapis/core/plugins/v1alpha1/plugins_pb";
+import { FluxPackageRepositoryCustomDetail } from "gen/kubeappsapis/plugins/fluxv2/packages/v1alpha1/fluxv2_pb";
+import { HelmPackageRepositoryCustomDetail } from "gen/kubeappsapis/plugins/helm/packages/v1alpha1/helm_pb";
+import { KappControllerPackageRepositoryCustomDetail } from "gen/kubeappsapis/plugins/kapp_controller/packages/v1alpha1/kapp_controller_pb";
 import { IOperatorsState } from "reducers/operators";
 import { IAuthState } from "../reducers/auth";
 import { IClustersState } from "../reducers/cluster";
 import { IConfigState } from "../reducers/config";
-import { IAppRepositoryState } from "../reducers/repos";
-import { hapi } from "./hapi/release";
+import { IPackageRepositoryState } from "../reducers/repos";
+import { RpcError } from "./RpcError";
 
-// Allow defining multiple error classes
-// tslint:disable:max-classes-per-file
-
-class CustomError extends Error {
+export class CustomError extends Error {
+  public causes: Error[] | undefined;
   // The constructor is defined so we can later on compare the returned object
-  // via err.contructor  == FOO
-  constructor(message?: string) {
+  // via err.constructor  == FOO
+  constructor(message?: string, causes?: Error[]) {
     super(message);
     Object.setPrototypeOf(this, new.target.prototype);
+    this.causes = causes;
+    this.checkCauses();
+  }
+  // Workaround used until RPC code (unary) throws a custom rpc error
+  // Check if any RPC error is among the causes
+  private checkCauses() {
+    if (!this.causes) return;
+    for (let i = 0; i < this.causes.length; i++) {
+      const cause = this.causes[i];
+      if (RpcError.isRpcError(cause)) {
+        this.causes[i] = new RpcError(cause);
+      }
+    }
   }
 }
-export class ForbiddenError extends CustomError {}
-export class UnauthorizedError extends CustomError {}
 
-export class NotFoundError extends CustomError {}
+// For 4XX HTTP-alike errors
+export class ClientNetworkError extends CustomError {}
+// 400
+export class BadRequestNetworkError extends ClientNetworkError {}
+// 401
+export class UnauthorizedNetworkError extends ClientNetworkError {}
+// 403
+export class ForbiddenNetworkError extends ClientNetworkError {}
+// 404
+export class NotFoundNetworkError extends ClientNetworkError {}
+// 408
+export class RequestTimeoutNetworkError extends ClientNetworkError {}
+// 409
+export class ConflictNetworkError extends ClientNetworkError {}
+// 422
+export class UnprocessableEntityError extends ClientNetworkError {}
+// 429
+export class TooManyRequestsNetworkError extends ClientNetworkError {}
 
-export class ConflictError extends CustomError {}
+// For 5XX HTTP-alike errors
+export class ServerNetworkError extends CustomError {}
+// 500
+export class InternalServerNetworkError extends ServerNetworkError {}
+// 501
+export class NotImplementedNetworkError extends ServerNetworkError {}
+// 503
+export class ServerUnavailableNetworkError extends ServerNetworkError {}
+// 504
+export class GatewayTimeoutNetworkError extends ServerNetworkError {}
 
-export class UnprocessableEntity extends CustomError {}
-
-export class InternalServerError extends CustomError {}
-
+// Application-level errors
 export class FetchError extends CustomError {}
+
+export class FetchWarning extends CustomError {}
 
 export class CreateError extends CustomError {}
 
@@ -41,103 +100,30 @@ export class DeleteError extends CustomError {}
 
 export type DeploymentEvent = "install" | "upgrade";
 
-export interface IRepo {
-  namespace: string;
-  name: string;
-  url: string;
+export interface IReceivePackagesActionPayload {
+  response: GetAvailablePackageSummariesResponse;
+  paginationToken: string;
 }
 
-export interface IChartCategory {
-  name: string;
-  count: number;
-}
-
-export interface IChartVersion {
-  id: string;
-  attributes: IChartVersionAttributes;
-  relationships: {
-    chart: {
-      data: IChartAttributes;
-    };
-  };
-}
-
-export interface IChartVersionAttributes {
-  version: string;
-  app_version: string;
-  created: string;
-}
-
-export interface IChart {
-  id: string;
-  attributes: IChartAttributes;
-  relationships: {
-    latestChartVersion: {
-      data: IChartVersionAttributes;
-    };
-  };
-}
-
-export interface IChartListMeta {
-  totalPages: number;
-}
-
-export interface IReceiveChartsActionPayload {
-  items: IChart[];
-  page: number;
-  totalPages: number;
-}
-
-export interface IChartAttributes {
-  name: string;
-  description: string;
-  home?: string;
-  icon?: string;
-  keywords: string[];
-  maintainers: Array<{
-    name: string;
-    email?: string;
-  }>;
-  repo: IRepo;
-  sources: string[];
-  category: string;
-}
-
-export interface IChartState {
+export interface IPackageState {
   isFetching: boolean;
   hasFinishedFetching: boolean;
+  nextPageToken: string;
   selected: {
     error?: FetchError | Error;
-    version?: IChartVersion;
-    versions: IChartVersion[];
+    availablePackageDetail?: AvailablePackageDetail;
+    pkgVersion?: string;
+    appVersion?: string;
+    versions: PackageAppVersion[];
+    metadatas: PackageMetadata[];
     readme?: string;
     readmeError?: string;
     values?: string;
-    schema?: any;
+    schema?: JSONSchemaType<any>;
   };
-  deployed: {
-    chartVersion?: IChartVersion;
-    values?: string;
-    schema?: jsonSchema.JSONSchema4;
-  };
-  items: IChart[];
-  categories: IChartCategory[];
+  items: AvailablePackageSummary[];
+  categories: string[];
   size: number;
-}
-
-export interface IChartUpdateInfo {
-  upToDate: boolean;
-  chartLatestVersion: string;
-  appLatestVersion: string;
-  repository: IRepo;
-  error?: Error;
-}
-
-export interface IDeployment {
-  metadata: {
-    name: string;
-    namespace: string;
-  };
 }
 
 export interface IServiceSpec {
@@ -163,9 +149,11 @@ export interface IPort {
 export interface IHTTPIngressPath {
   path: string;
 }
+
 export interface IIngressHTTP {
   paths: IHTTPIngressPath[];
 }
+
 export interface IIngressRule {
   host: string;
   http: IIngressHTTP;
@@ -211,41 +199,12 @@ export interface IResource {
   metadata: IResourceMetadata;
 }
 
-export interface IOwnerReference {
-  apiVersion: string;
-  blockOwnerDeletion: boolean;
-  kind: string;
-  name: string;
-  uid: string;
-}
-
 export interface ISecret {
   apiVersion: string;
   kind: string;
   type: string;
   data: { [s: string]: string };
   metadata: IResourceMetadata;
-}
-
-export interface IDeploymentStatus {
-  replicas: number;
-  updatedReplicas: number;
-  availableReplicas: number;
-}
-
-export interface IStatefulsetStatus {
-  replicas: number;
-  updatedReplicas: number;
-  readyReplicas: number;
-}
-
-export interface IDaemonsetStatus {
-  currentNumberScheduled: number;
-  numberReady: number;
-}
-
-export interface IRelease extends hapi.release.Release {
-  updateInfo?: IChartUpdateInfo;
 }
 
 export interface IPackageManifestChannel {
@@ -370,28 +329,29 @@ export interface IClusterServiceVersion extends IResource {
   spec: IClusterServiceVersionSpec;
 }
 
-export interface IAppRepositoryFilter {
+export interface IPkgRepositoryFilter {
   jq: string;
   variables?: { [key: string]: string };
 }
 
-export interface IAppState {
+export interface IInstalledPackageState {
   isFetching: boolean;
   error?: FetchError | CreateError | UpgradeError | RollbackError | DeleteError;
-  // currently items are always Helm releases
-  items: IRelease[];
-  listOverview?: IAppOverview[];
-  selected?: IRelease;
+  items: InstalledPackageDetail[];
+  listOverview?: InstalledPackageSummary[];
+  selected?: CustomInstalledPackageDetail;
+  // TODO(agamez): add tests for this new state field
+  selectedDetails?: AvailablePackageDetail;
+  resourceRefs?: ResourceRef[];
 }
 
 export interface IStoreState {
-  router: RouterState;
-  apps: IAppState;
+  apps: IInstalledPackageState;
   auth: IAuthState;
-  charts: IChartState;
+  packages: IPackageState;
   config: IConfigState;
   kube: IKubeState;
-  repos: IAppRepositoryState;
+  repos: IPackageRepositoryState;
   clusters: IClustersState;
   operators: IOperatorsState;
 }
@@ -399,24 +359,6 @@ export interface IStoreState {
 interface IK8sResource {
   apiVersion: string;
   kind: string;
-}
-
-/** @see https://github.com/kubernetes/community/blob/master/contributors/devel/api-conventions.md#objects */
-export interface IK8sObject<M, SP, ST> extends IK8sResource {
-  metadata: {
-    annotations?: { [key: string]: string };
-    creationTimestamp?: string;
-    deletionTimestamp?: string | null;
-    generation?: number;
-    labels?: { [key: string]: string };
-    name: string;
-    namespace: string;
-    resourceVersion?: string;
-    uid: string;
-    selfLink?: string; // Not in docs, but seems to exist everywhere
-  } & M;
-  spec?: SP;
-  status?: ST;
 }
 
 /** @see https://github.com/kubernetes/community/blob/master/contributors/devel/api-conventions.md#lists-and-simple-kinds */
@@ -428,132 +370,12 @@ export interface IK8sList<I, M> extends IK8sResource {
   } & M;
 }
 
-export interface IAppRepository
-  extends IK8sObject<
-    {
-      clusterName: string;
-      creationTimestamp: string;
-      deletionGracePeriodSeconds: string | null;
-      deletionTimestamp: string | null;
-      resourceVersion: string;
-      selfLink: string;
-    },
-    {
-      type: string;
-      url: string;
-      auth?: {
-        header?: {
-          secretKeyRef: {
-            name: string;
-            key: string;
-          };
-        };
-        customCA?: {
-          secretKeyRef: {
-            name: string;
-            key: string;
-          };
-        };
-      };
-      resyncRequests: number;
-      syncJobPodTemplate?: object;
-      dockerRegistrySecrets?: string[];
-      ociRepositories?: string[];
-      tlsInsecureSkipVerify?: boolean;
-      filterRule?: IAppRepositoryFilter;
-    },
-    undefined
-  > {}
-
-export interface ICreateAppRepositoryResponse {
-  appRepository: IAppRepository;
-}
-
-export interface IAppRepositoryList
-  extends IK8sList<
-    IAppRepository,
-    {
-      continue: string;
-      resourceVersion: string;
-      selfLink: string;
-    }
-  > {}
-
-export interface IAppRepositoryKey {
-  name: string;
-  namespace: string;
-}
-
-/** @see https://github.com/kubernetes/community/blob/master/contributors/devel/api-conventions.md#response-status-kind */
-export interface IStatus extends IK8sResource {
-  kind: "Status";
-  status: "Success" | "Failure";
-  message: string;
-  reason:
-    | "BadRequest"
-    | "Unauthorized"
-    | "Forbidden"
-    | "NotFound"
-    | "AlreadyExists"
-    | "Conflict"
-    | "Invalid"
-    | "Timeout"
-    | "ServerTimeout"
-    | "MethodNotAllowed"
-    | "InternalError";
-  details?: {
-    kind?: string;
-    name?: string;
-    causes?: IStatusCause[] | string;
-  };
-}
-
-interface IStatusCause {
-  field: string;
-  message: string;
-  reason: string;
-}
-
-export interface IRouterPathname {
-  router: {
-    location: {
-      pathname: string;
-    };
-  };
-}
-
-export interface IRuntimeVersion {
-  name: string;
-  version: string;
-  runtimeImage: string;
-  initImage: string;
-}
-
-export interface IRuntime {
-  ID: string;
-  versions: IRuntimeVersion[];
-  depName: string;
-  fileNameSuffix: string;
-}
-
 export interface IRBACRole {
   apiGroup: string;
   namespace?: string;
   clusterWide?: boolean;
   resource: string;
   verbs: string[];
-}
-
-export interface IAppOverview {
-  releaseName: string;
-  namespace: string;
-  version: string;
-  icon?: string;
-  status: string;
-  chart: string;
-  chartMetadata: hapi.chart.Metadata;
-  // UpdateInfo is internally populated
-  updateInfo?: IChartUpdateInfo;
 }
 
 export interface IKubeItem<T> {
@@ -570,40 +392,94 @@ export interface IKind {
 
 export interface IKubeState {
   items: { [s: string]: IKubeItem<IResource | IK8sList<IResource, {}>> };
-  sockets: { [s: string]: { socket: WebSocket; onError: (e: Event) => void } };
+  // TODO(minelson): Remove kinds and kindsError once the operator support is
+  // removed from the dashboard or replaced with a plugin.
   kinds: { [kind: string]: IKind };
   kindsError?: Error;
-  timers: { [id: string]: NodeJS.Timer | undefined };
 }
 
-export interface IBasicFormParam {
-  path: string;
-  type?: jsonSchema.JSONSchema4TypeName | jsonSchema.JSONSchema4TypeName[];
-  value?: any;
-  title?: string;
-  minimum?: number;
-  maximum?: number;
-  render?: string;
-  description?: string;
+// We extend the JSONSchema properties to include the default/deployed values as well as
+// other useful information for rendering each param in the UI
+export type IBasicFormParam = JSONSchemaType<any> & {
+  key: string;
+  title: string;
+  hasProperties: boolean;
+  params?: IBasicFormParam[];
   enum?: string[];
-  hidden?:
-    | {
-        event: DeploymentEvent;
-        path: string;
-        value: string;
-        conditions: Array<{
-          event: DeploymentEvent;
-          path: string;
-          value: string;
-        }>;
-        operator: string;
-      }
-    | string;
-  children?: IBasicFormParam[];
+  isRequired: boolean;
+  defaultValue: any;
+  deployedValue: any;
+  currentValue: any;
+  schema: JSONSchemaType<any>;
+  isCustomComponent?: boolean;
+};
+
+// this type is encapsulating the result of a schema validation,
+// including the errors returned by the library
+export interface IAjvValidateResult {
+  valid: boolean;
+  errors: ErrorObject[] | null | undefined;
 }
-export interface IBasicFormSliderParam extends IBasicFormParam {
-  sliderMin?: number;
-  sliderMax?: number;
-  sliderStep?: number;
-  sliderUnit?: string;
+
+// type for handling Helm installed packages, which includes the revision,
+// a field not present in other packages
+export class CustomInstalledPackageDetail extends InstalledPackageDetail {
+  revision: number;
+
+  constructor(revision: number, data?: PartialMessage<InstalledPackageDetail>) {
+    super(data);
+    this.revision = revision;
+  }
+}
+
+//  enum for the type of package repository storage
+export enum RepositoryStorageTypes {
+  PACKAGE_REPOSITORY_STORAGE_HELM = "helm",
+  PACKAGE_REPOSITORY_STORAGE_OCI = "oci",
+  PACKAGE_REPOSITORY_STORAGE_CARVEL_INLINE = "inline",
+  PACKAGE_REPOSITORY_STORAGE_CARVEL_IMAGE = "image",
+  PACKAGE_REPOSITORY_STORAGE_CARVEL_IMGPKGBUNDLE = "imgpkgBundle",
+  PACKAGE_REPOSITORY_STORAGE_CARVEL_HTTP = "http",
+  PACKAGE_REPOSITORY_STORAGE_CARVEL_GIT = "git",
+}
+
+// enum for the current plugin names
+export enum PluginNames {
+  PACKAGES_HELM = "helm.packages",
+  PACKAGES_FLUX = "fluxv2.packages",
+  PACKAGES_KAPP = "kapp_controller.packages",
+}
+
+// type holding the data used in the package repository form
+export interface IPkgRepoFormData {
+  authMethod: PackageRepositoryAuth_PackageRepositoryAuthType;
+  isUserManaged: boolean;
+  // kubeapps-managed secrets
+  authHeader: string; // used if type == PACKAGE_REPOSITORY_AUTH_TYPE_BEARER || type == PACKAGE_REPOSITORY_AUTH_TYPE_AUTHORIZATION_HEADER
+  basicAuth: UsernamePassword; // used if type == PACKAGE_REPOSITORY_AUTH_TYPE_BASIC_AUTH
+  dockerRegCreds: DockerCredentials; // used if type == PACKAGE_REPOSITORY_AUTH_TYPE_DOCKER_CONFIG_JSON
+  sshCreds: SshCredentials; // used if type == PACKAGE_REPOSITORY_AUTH_TYPE_SSH
+  opaqueCreds: OpaqueCredentials; // used if type == PACKAGE_REPOSITORY_AUTH_TYPE_OPAQUE
+  tlsCertKey: TlsCertKey; // used if type == PACKAGE_REPOSITORY_AUTH_TYPE_TLS
+  // user-managed secrets
+  secretAuthName: string;
+  secretTLSName: string;
+  // rest of the parameters
+  customCA: string;
+  description: string;
+  interval: string;
+  name: string;
+  passCredentials: boolean;
+  plugin: Plugin;
+  skipTLS: boolean;
+  type: string;
+  url: string;
+  // add more types if necessary
+  customDetail?: Partial<
+    | HelmPackageRepositoryCustomDetail
+    | KappControllerPackageRepositoryCustomDetail
+    | FluxPackageRepositoryCustomDetail
+  >;
+  namespace: string;
+  isNamespaceScoped: boolean;
 }

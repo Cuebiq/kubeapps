@@ -1,7 +1,9 @@
+// Copyright 2020-2022 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
+
 import { app } from "shared/url";
-import { trimDescription } from "shared/utils";
-import operatorIcon from "../../icons/operator-framework.svg";
-import placeholder from "../../placeholder.png";
+import { getPluginIcon, trimDescription } from "shared/utils";
+import placeholder from "icons/placeholder.svg";
 import InfoCard from "../InfoCard/InfoCard";
 import { IOperatorCatalogItem } from "./CatalogItem";
 
@@ -10,9 +12,7 @@ export default function OperatorCatalogItem(props: IOperatorCatalogItem) {
   const iconSrc = icon || placeholder;
   // Cosmetic change, remove the version from the csv name
   const csvName = props.csv.split(".")[0];
-  const tag1 = <span>{csvName}</span>;
   const link = app.operatorInstances.new(cluster, namespace, csv, id);
-  const bgIcon = operatorIcon;
   return (
     <InfoCard
       key={id}
@@ -21,8 +21,10 @@ export default function OperatorCatalogItem(props: IOperatorCatalogItem) {
       info={version || "-"}
       icon={iconSrc}
       description={trimDescription(description)}
-      tag1Content={tag1}
-      bgIcon={bgIcon}
+      bgIcon={getPluginIcon("operator")}
+      tag1Content={csvName}
+      tag2Content={"operator"}
+      tag2Class={"label-info-secondary"}
     />
   );
 }

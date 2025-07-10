@@ -1,10 +1,14 @@
+// Copyright 2019-2023 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
+
 import { CdsButton } from "@cds/react/button";
 import { CdsControlMessage } from "@cds/react/forms";
 import { CdsModal, CdsModalActions, CdsModalContent, CdsModalHeader } from "@cds/react/modal";
 import { CdsSelect } from "@cds/react/select";
-import Alert from "components/js/Alert";
-import { useState } from "react";
-import LoadingWrapper from "../../../LoadingWrapper/LoadingWrapper";
+import AlertGroup from "components/AlertGroup";
+import LoadingWrapper from "components/LoadingWrapper";
+import { useEffect, useState } from "react";
+import { DeleteError, FetchWarning } from "shared/types";
 import "./RollbackDialog.css";
 
 interface IRollbackDialogProps {
@@ -24,36 +28,57 @@ function RollbackDialog({
   onConfirm,
   closeModal,
 }: IRollbackDialogProps) {
-  const [targetRevision, setTargetRevision] = useState(currentRevision - 1);
+  const [targetRevision, setTargetRevision] = useState(currentRevision);
+  const [hasUserChanges, setHasUserChanges] = useState(false);
   const options: number[] = [];
-  // If there are no revisions to rollback to, disable
   const disableRollback = currentRevision === 1;
-  const selectRevision = (e: React.FormEvent<HTMLSelectElement>) => {
-    setTargetRevision(Number(e.currentTarget.value));
+  const selectRevision = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setHasUserChanges(true);
+    setTargetRevision(Number(e.target.value));
   };
   const onClick = () => {
-    onConfirm(targetRevision);
+    onConfirm(Number(targetRevision));
   };
   // Use as options the number of versions without the latest
-  for (let i = currentRevision - 1; i > 0; i--) {
+  for (let i = Number(currentRevision) - 1; i > 0; i--) {
     options.push(i);
   }
+
+  useEffect(() => {
+    if (!hasUserChanges) {
+      setTargetRevision(currentRevision - 1);
+    }
+  }, [hasUserChanges, currentRevision]);
+
+  /* eslint-disable jsx-a11y/label-has-associated-control */
   return (
     <>
       {modalIsOpen && (
         <CdsModal closable={false} onCloseChange={closeModal}>
           <CdsModalHeader>Rollback application</CdsModalHeader>
           <CdsModalContent>
-            {error && <Alert theme="danger">An error occurred: {error.message}</Alert>}
-            {loading && <p>Loading, please wait.</p>}
-            <LoadingWrapper loaded={!loading}>
+            {error &&
+              (error.constructor === FetchWarning ? (
+                <AlertGroup withMargin={false} status="warning">
+                  There is a problem with this package: {error["message"]}.
+                </AlertGroup>
+              ) : error.constructor === DeleteError ? (
+                <AlertGroup withMargin={false} status="danger">
+                  Unable to delete the application. Received: {error["message"]}.
+                </AlertGroup>
+              ) : (
+                <AlertGroup withMargin={false} status="danger">
+                  An error occurred: {error["message"]}.
+                </AlertGroup>
+              ))}
+            <LoadingWrapper className="center" loadingText="Loading, please wait" loaded={!loading}>
               {disableRollback ? (
                 <p>The application has not been upgraded, it's not possible to rollback.</p>
               ) : (
                 <>
-                  <CdsSelect layout="horizontal" id="revision-selector" onChange={selectRevision}>
+                  <CdsSelect layout="horizontal" id="revision-selector">
                     <label>Select the revision to which you want to rollback</label>
-                    <select>
+                    <select value={targetRevision} onChange={selectRevision}>
                       {options.map(o => (
                         <option key={o} value={o}>
                           {o}

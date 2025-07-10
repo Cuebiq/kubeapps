@@ -1,34 +1,27 @@
-import actions from "actions";
-import Table from "components/js/Table";
-import LoadingWrapper from "components/LoadingWrapper/LoadingWrapper";
+// Copyright 2019-2023 the Kubeapps contributors.
+// SPDX-License-Identifier: Apache-2.0
 
-import * as ReactRedux from "react-redux";
-import ResourceRef from "shared/ResourceRef";
-import { defaultStore, getStore, mountWrapper } from "shared/specs/mountWrapper";
-import { IResource } from "shared/types";
+import LoadingWrapper from "components/LoadingWrapper/LoadingWrapper";
+import Table from "components/Table";
+import { ResourceRef } from "gen/kubeappsapis/core/packages/v1alpha1/packages_pb";
+import { keyForResourceRef } from "shared/ResourceRef";
+import { getStore, initialState, mountWrapper } from "shared/specs/mountWrapper";
+import { IResource, IStoreState } from "shared/types";
 import ResourceTable from "./ResourceTable";
 
 const defaultProps = {
   id: "test",
   resourceRefs: [],
-  watchResource: jest.fn(),
-  closeWatch: jest.fn(),
 };
 
 const sampleResourceRef = {
-  cluster: "cluster-name",
   apiVersion: "v1",
   kind: "Deployment",
   name: "foo",
   namespace: "default",
-  filter: "",
-  plural: "deployments",
-  namespaced: true,
-  getResourceURL: jest.fn(() => "deployment-foo"),
-  watchResourceURL: jest.fn(),
-  getResource: jest.fn(),
-  watchResource: jest.fn(),
 } as ResourceRef;
+
+const sampleKey = keyForResourceRef(sampleResourceRef);
 
 const deployment = {
   kind: "Deployment",
@@ -42,51 +35,18 @@ const deployment = {
   },
 };
 
-let spyOnUseDispatch: jest.SpyInstance;
-const kubeaActions = { ...actions.kube };
-beforeEach(() => {
-  actions.kube = {
-    ...actions.kube,
-    getAndWatchResource: jest.fn(),
-    closeWatchResource: jest.fn(),
-  };
-  const mockDispatch = jest.fn();
-  spyOnUseDispatch = jest.spyOn(ReactRedux, "useDispatch").mockReturnValue(mockDispatch);
-});
-
-afterEach(() => {
-  actions.kube = { ...kubeaActions };
-  spyOnUseDispatch.mockRestore();
-});
-
-it("watches the given resources and close watchers", async () => {
-  const watchResource = jest.fn();
-  const closeWatch = jest.fn();
-  actions.kube = {
-    ...actions.kube,
-    getAndWatchResource: watchResource,
-    closeWatchResource: closeWatch,
-  };
-  const wrapper = mountWrapper(
-    defaultStore,
-    <ResourceTable {...defaultProps} resourceRefs={[sampleResourceRef]} />,
-  );
-  expect(watchResource).toHaveBeenCalledWith(sampleResourceRef);
-  wrapper.unmount();
-  expect(closeWatch).toHaveBeenCalledWith(sampleResourceRef);
-});
-
 it("renders a table with a resource", () => {
   const state = getStore({
+    ...initialState,
     kube: {
       items: {
-        "deployment-foo": {
+        [sampleKey]: {
           isFetching: false,
           item: deployment as IResource,
         },
       },
     },
-  });
+  } as Partial<IStoreState>);
   const wrapper = mountWrapper(
     state,
     <ResourceTable {...defaultProps} resourceRefs={[sampleResourceRef]} />,
@@ -98,14 +58,15 @@ it("renders a table with a resource", () => {
 
 it("renders a table with a loading resource", () => {
   const state = getStore({
+    ...initialState,
     kube: {
       items: {
-        "deployment-foo": {
+        [sampleKey]: {
           isFetching: true,
         },
       },
     },
-  });
+  } as Partial<IStoreState>);
   const wrapper = mountWrapper(
     state,
     <ResourceTable {...defaultProps} resourceRefs={[sampleResourceRef]} />,
@@ -119,15 +80,16 @@ it("renders a table with a loading resource", () => {
 
 it("renders a table with an error", () => {
   const state = getStore({
+    ...initialState,
     kube: {
       items: {
-        "deployment-foo": {
+        [sampleKey]: {
           isFetching: false,
           error: new Error("Boom!"),
         },
       },
     },
-  });
+  } as Partial<IStoreState>);
   const wrapper = mountWrapper(
     state,
     <ResourceTable {...defaultProps} resourceRefs={[sampleResourceRef]} />,
@@ -141,41 +103,16 @@ it("renders a table with an error", () => {
 
 it("do not fail if the resources are already populated but the refs not yet", () => {
   const state = getStore({
+    ...initialState,
     kube: {
       items: {
-        "deployment-foo": {
+        [sampleKey]: {
           isFetching: false,
           item: deployment as IResource,
         },
       },
     },
-  });
+  } as Partial<IStoreState>);
   const wrapper = mountWrapper(state, <ResourceTable {...defaultProps} resourceRefs={[]} />);
   expect(wrapper.find(Table)).not.toExist();
-});
-
-it("renders the table with two entries with a list reference", () => {
-  const state = getStore({
-    kube: {
-      items: {
-        "deployment-foo": {
-          isFetching: false,
-          item: {
-            items: [
-              deployment as IResource,
-              { ...deployment, metadata: { name: "bar" } } as IResource,
-            ],
-          },
-        },
-      },
-    },
-  });
-  const wrapper = mountWrapper(
-    state,
-    <ResourceTable
-      {...defaultProps}
-      resourceRefs={[{ ...sampleResourceRef, name: "" } as ResourceRef]}
-    />,
-  );
-  expect(wrapper.find(Table).prop("data")).toHaveLength(2);
 });
