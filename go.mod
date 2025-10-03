@@ -25,7 +25,7 @@ require (
 	github.com/fluxcd/source-controller/api v1.2.5
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/go-redis/redismock/v8 v8.11.5
-	github.com/google/go-cmp v0.6.0
+	github.com/google/go-cmp v0.7.0
 	github.com/google/go-containerregistry v0.20.1
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.22.0
@@ -48,7 +48,7 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20241021214115-324edc3d5d38
 	google.golang.org/grpc v1.67.1
 	google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.5.1
-	google.golang.org/protobuf v1.35.1
+	google.golang.org/protobuf v1.36.10
 	gopkg.in/yaml.v3 v3.0.1
 	helm.sh/helm/v3 v3.14.4
 	k8s.io/api v0.29.3
